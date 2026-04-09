@@ -135,29 +135,25 @@ export async function getTopArtists(
   limit: number,
   period: string
 ): Promise<Artist[]> {
-  try {
-    const data = await fetchLastfm(
-      { method: 'user.getTopArtists', period, limit: String(limit) },
-      env
-    ) as any;
+  const data = await fetchLastfm(
+    { method: 'user.getTopArtists', period, limit: String(limit) },
+    env
+  ) as any;
 
-    const artists = data.topartists?.artist;
-    if (!Array.isArray(artists)) {
-      throw new Error('Last.fm response malformed: topartists.artist missing or not an array');
-    }
-
-    return artists.map((a: { name: string; playcount: string; url: string }) => {
-      const parsedPlaycount = parseInt(a.playcount ?? '', 10);
-      return {
-        id: a.name,
-        name: a.name,
-        playcount: Number.isFinite(parsedPlaycount) ? parsedPlaycount : 0,
-        url: a.url,
-      };
-    });
-  } catch (error) {
-    throw error;
+  const artists = data.topartists?.artist;
+  if (!Array.isArray(artists)) {
+    throw new Error('Last.fm response malformed: topartists.artist missing or not an array');
   }
+
+  return artists.map((a: { name: string; playcount: string; url: string }) => {
+    const parsedPlaycount = parseInt(a.playcount ?? '', 10);
+    return {
+      id: a.name,
+      name: a.name,
+      playcount: Number.isFinite(parsedPlaycount) ? parsedPlaycount : 0,
+      url: a.url,
+    };
+  });
 }
 
 export async function getArtistTags(
