@@ -136,7 +136,7 @@ export async function getTopArtists(
   period: string
 ): Promise<Artist[]> {
   const data = await fetchLastfm(
-    { method: 'user.getTopArtists', period, limit: String(limit) },
+    { method: 'user.getTopArtists', user: env.LASTFM_USERNAME!, period, limit: String(limit) },
     env
   ) as any;
 
