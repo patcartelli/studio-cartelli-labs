@@ -135,21 +135,29 @@ export async function getTopArtists(
   limit: number,
   period: string
 ): Promise<Artist[]> {
-  const data = await fetchLastfm(
-    { method: 'user.getTopArtists', period, limit: String(limit) },
-    env
-  ) as { topartists: { artist: Array<{
-    name: string;
-    playcount: string;
-    url: string;
-  }> } };
+  try {
+    const data = await fetchLastfm(
+      { method: 'user.getTopArtists', period, limit: String(limit) },
+      env
+    ) as any;
 
-  return data.topartists.artist.map((a) => ({
-    id: a.name,
-    name: a.name,
-    playcount: parseInt(a.playcount, 10),
-    url: a.url,
-  }));
+    const artists = data.topartists?.artist;
+    if (!Array.isArray(artists)) {
+      throw new Error('Last.fm response malformed: topartists.artist missing or not an array');
+    }
+
+    return artists.map((a: { name: string; playcount: string; url: string }) => {
+      const parsedPlaycount = parseInt(a.playcount ?? '', 10);
+      return {
+        id: a.name,
+        name: a.name,
+        playcount: Number.isFinite(parsedPlaycount) ? parsedPlaycount : 0,
+        url: a.url,
+      };
+    });
+  } catch (error) {
+    throw error;
+  }
 }
 
 export async function getArtistTags(
@@ -160,13 +168,13 @@ export async function getArtistTags(
     const data = await fetchLastfm(
       { method: 'artist.getTopTags', artist: artistName },
       env
-    ) as { toptags: { tag: Array<{ name: string; count: number }> } };
+    ) as any;
 
     const noiseTags = new Set(['seen live', 'favorites', 'favourite', 'love', 'amazing', 'awesome']);
     return (data.toptags?.tag ?? [])
-      .filter((t) => !noiseTags.has(t.name.toLowerCase()))
+      .filter((t: { name: string }) => !noiseTags.has(t.name.toLowerCase()))
       .slice(0, 5)
-      .map((t) => t.name.toLowerCase());
+      .map((t: { name: string }) => t.name.toLowerCase());
   } catch {
     return [];
   }
@@ -180,11 +188,11 @@ export async function getArtistSimilar(
     const data = await fetchLastfm(
       { method: 'artist.getSimilar', artist: artistName, limit: '50' },
       env
-    ) as { similarartists: { artist: Array<{ name: string; match: string }> } };
+    ) as any;
 
-    return (data.similarartists?.artist ?? []).map((a) => ({
+    return (data.similarartists?.artist ?? []).map((a: { name: string; match: string }) => ({
       name: a.name,
-      similarity: parseFloat(a.match),
+      similarity: Number.isFinite(parseFloat(a.match)) ? parseFloat(a.match) : 0,
     }));
   } catch {
     return [];
