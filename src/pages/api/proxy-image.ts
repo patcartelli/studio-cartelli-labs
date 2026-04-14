@@ -5,16 +5,30 @@ export const prerender = false;
 
 import type { APIRoute } from 'astro';
 
-const ALLOWED_PREFIX = 'https://lastfm.freetls.fastly.net/';
+const ALLOWED_HOST = 'lastfm.freetls.fastly.net';
 
 export const GET: APIRoute = async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const imageUrl = searchParams.get('url');
 
-  if (!imageUrl || !imageUrl.startsWith(ALLOWED_PREFIX)) {
-    return new Response('Bad request: url must start with https://lastfm.freetls.fastly.net/', {
-      status: 400,
-    });
+  if (!imageUrl) {
+    return new Response('Bad request: url param required', { status: 400 });
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(imageUrl);
+  } catch {
+    return new Response('Bad request: invalid URL', { status: 400 });
+  }
+
+  if (
+    parsed.protocol !== 'https:' ||
+    parsed.hostname !== ALLOWED_HOST ||
+    parsed.username !== '' ||
+    parsed.password !== ''
+  ) {
+    return new Response('Bad request: disallowed URL', { status: 400 });
   }
 
   let upstream: Response;
@@ -28,10 +42,13 @@ export const GET: APIRoute = async ({ request }) => {
     return new Response('Upstream error', { status: 502 });
   }
 
-  const body = await upstream.arrayBuffer();
   const contentType = upstream.headers.get('content-type') ?? 'image/jpeg';
 
-  return new Response(body, {
+  if (!contentType.startsWith('image/')) {
+    return new Response('Upstream returned non-image content', { status: 502 });
+  }
+
+  return new Response(upstream.body, {
     status: 200,
     headers: {
       'content-type': contentType,
