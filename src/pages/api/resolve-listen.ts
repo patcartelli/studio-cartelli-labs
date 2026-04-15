@@ -35,7 +35,7 @@ async function searchBandcamp(artist: string, album: string): Promise<string | n
     return null;
   }
 
-  const resultPattern = /<li class="searchresult[^"]*">([\s\S]*?)<\/li>/g;
+  const resultPattern = /<div class="searchresult[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<div class="searchresult|$)/g;
   const normArtist = normalize(artist);
   const normAlbum = normalize(album);
 
@@ -45,14 +45,18 @@ async function searchBandcamp(artist: string, album: string): Promise<string | n
     checked++;
     const block = match[1];
 
-    const urlMatch = block.match(/<a\s[^>]*class="artcont"[^>]*href="([^"]+)"/);
+    // Extract album URL from the first <a href="https://...bandcamp.com/album/...">
+    const urlMatch = block.match(/<a\s[^>]*href="(https?:\/\/[^"]*bandcamp\.com\/album\/[^"]+)"/);
     if (!urlMatch) continue;
-    const resultUrl = urlMatch[1];
+    const resultUrl = urlMatch[1].replace(/\?from=search.*$/, '');
 
-    const headingMatch = block.match(/<div class="heading">\s*<a[^>]*>([^<]+)<\/a>/);
-    const resultAlbum = headingMatch ? normalize(headingMatch[1]) : '';
+    // Extract album name from the second <a> (first is the image link, second is the title)
+    const titleLinks = [...block.matchAll(/<a\s[^>]*href="[^"]*bandcamp\.com\/album\/[^"]*"[^>]*>\s*([^<]+?)\s*<\/a>/g)];
+    const titleMatch = titleLinks.length > 1 ? titleLinks[1] : titleLinks[0];
+    const resultAlbum = titleMatch ? normalize(titleMatch[1]) : '';
 
-    const subheadMatch = block.match(/<div class="subhead">\s*by\s+([^<]+)/);
+    // Extract artist from "<div>by Artist Name</div>"
+    const subheadMatch = block.match(/<div>\s*by\s+([^<]+)<\/div>/);
     const resultArtist = subheadMatch ? normalize(subheadMatch[1]) : '';
 
     if (resultAlbum === normAlbum && resultArtist === normArtist) {
