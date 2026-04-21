@@ -1,8 +1,10 @@
 // src/pages/api/resolve-listen.ts
-// Resolves a listen link for an album: tries Bandcamp search first, falls back to Last.fm.
+// Resolves a listen link: tries Bandcamp search first, falls back to Last.fm.
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
+
+type ListenType = 'artist' | 'album' | 'track';
 
 /**
  * Normalize a string for comparison: lowercase, collapse whitespace, strip
@@ -18,89 +20,210 @@ function normalize(s: string): string {
 }
 
 /**
- * Search Bandcamp for an album and return the URL if a close match is found.
+ * Strip common edition/remaster suffixes before comparison.
+ * e.g. "OK Computer (Deluxe Edition)" → "OK Computer"
  */
-async function searchBandcamp(artist: string, album: string): Promise<string | null> {
-  const query = `${artist} ${album}`;
-  const searchUrl = `https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=a`;
+function stripSuffixes(s: string): string {
+  return s
+    .replace(/\s*\([^)]*(?:edition|remaster|deluxe|expanded|bonus|version|ep|single)[^)]*\)\s*$/gi, '')
+    .trim();
+}
 
-  let html: string;
+/**
+ * Fuzzy string match: normalize + strip suffixes, then check if either contains the other.
+ */
+function fuzzyMatch(a: string, b: string): boolean {
+  const na = normalize(stripSuffixes(a));
+  const nb = normalize(stripSuffixes(b));
+  return na === nb || na.includes(nb) || nb.includes(na);
+}
+
+/**
+ * Fetch Bandcamp search HTML for the given query and item type.
+ */
+async function fetchBandcampSearch(query: string, itemType: string): Promise<string | null> {
+  const searchUrl = `https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=${itemType}`;
   try {
     const res = await fetch(searchUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; StudioCartelli/1.0)' },
     });
     if (!res.ok) return null;
-    html = await res.text();
+    return await res.text();
   } catch {
     return null;
   }
+}
 
-  const resultPattern = /<div class="searchresult[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<div class="searchresult|$)/g;
-  const normArtist = normalize(artist);
-  const normAlbum = normalize(album);
-
+/**
+ * Extract up to 5 result blocks from Bandcamp search HTML.
+ */
+function extractResultBlocks(html: string): string[] {
+  const blocks: string[] = [];
+  const pattern = /<div class="searchresult[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<div class="searchresult|<\/div>|$)/g;
   let match: RegExpExecArray | null;
-  let checked = 0;
-  while ((match = resultPattern.exec(html)) !== null && checked < 5) {
-    checked++;
-    const block = match[1];
+  while ((match = pattern.exec(html)) !== null && blocks.length < 5) {
+    blocks.push(match[1]);
+  }
+  return blocks;
+}
 
-    // Extract album URL from the first <a href="https://...bandcamp.com/album/...">
-    const urlMatch = block.match(/<a\s[^>]*href="(https?:\/\/[^"]*bandcamp\.com\/album\/[^"]+)"/);
+/**
+ * Extract artist name from a Bandcamp result block ("by Artist Name").
+ */
+function extractResultArtist(block: string): string {
+  const m = block.match(/<div>\s*by\s+([^<]+)<\/div>/);
+  return m ? m[1].trim() : '';
+}
+
+/**
+ * Search Bandcamp for an artist page and return the URL if a match is found.
+ */
+async function searchBandcampArtist(artist: string): Promise<string | null> {
+  const html = await fetchBandcampSearch(artist, 'b');
+  if (!html) return null;
+
+  const blocks = extractResultBlocks(html);
+  for (const block of blocks) {
+    // Artist page URL: https://artist.bandcamp.com
+    const urlMatch = block.match(/<a\s[^>]*href="(https?:\/\/[^"]*\.bandcamp\.com\/?)"[^>]*>/);
     if (!urlMatch) continue;
     const resultUrl = urlMatch[1].replace(/\?from=search.*$/, '');
 
-    // Extract album name from the second <a> (first is the image link, second is the title)
-    const titleLinks = [...block.matchAll(/<a\s[^>]*href="[^"]*bandcamp\.com\/album\/[^"]*"[^>]*>\s*([^<]+?)\s*<\/a>/g)];
-    const titleMatch = titleLinks.length > 1 ? titleLinks[1] : titleLinks[0];
-    const resultAlbum = titleMatch ? normalize(titleMatch[1]) : '';
+    // For artist results, the band name appears in a heading link
+    const titleMatch = block.match(/<div class="heading">\s*<a[^>]*>\s*([^<]+?)\s*<\/a>/);
+    const resultName = titleMatch ? titleMatch[1].trim() : '';
 
-    // Extract artist from "<div>by Artist Name</div>"
-    const subheadMatch = block.match(/<div>\s*by\s+([^<]+)<\/div>/);
-    const resultArtist = subheadMatch ? normalize(subheadMatch[1]) : '';
-
-    if (resultAlbum === normAlbum && resultArtist === normArtist) {
+    if (fuzzyMatch(resultName, artist)) {
       return resultUrl;
     }
   }
-
   return null;
 }
 
 /**
- * Construct a Last.fm album URL (always valid, no network request needed).
+ * Search Bandcamp for an album page and return the URL if a match is found.
  */
-function lastfmUrl(artist: string, album: string): string {
-  const encArtist = encodeURIComponent(artist).replace(/%20/g, '+');
-  const encAlbum = encodeURIComponent(album).replace(/%20/g, '+');
-  return `https://www.last.fm/music/${encArtist}/${encAlbum}`;
+async function searchBandcampAlbum(artist: string, album: string): Promise<string | null> {
+  const html = await fetchBandcampSearch(`${artist} ${album}`, 'a');
+  if (!html) return null;
+
+  const blocks = extractResultBlocks(html);
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+
+    const urlMatch = block.match(/<a\s[^>]*href="(https?:\/\/[^"]*bandcamp\.com\/album\/[^"]+)"/);
+    if (!urlMatch) continue;
+    const resultUrl = urlMatch[1].replace(/\?from=search.*$/, '');
+
+    const titleLinks = [...block.matchAll(/<a\s[^>]*href="[^"]*bandcamp\.com\/album\/[^"]*"[^>]*>\s*([^<]+?)\s*<\/a>/g)];
+    const titleMatch = titleLinks.length > 1 ? titleLinks[1] : titleLinks[0];
+    const resultAlbum = titleMatch ? titleMatch[1].trim() : '';
+    const resultArtist = extractResultArtist(block);
+
+    // First result: accept if artist matches, even if title match is looser
+    if (i === 0 && fuzzyMatch(resultArtist, artist)) {
+      return resultUrl;
+    }
+
+    if (fuzzyMatch(resultArtist, artist) && fuzzyMatch(resultAlbum, album)) {
+      return resultUrl;
+    }
+  }
+  return null;
+}
+
+/**
+ * Search Bandcamp for a track page and return the URL if a match is found.
+ */
+async function searchBandcampTrack(artist: string, track: string): Promise<string | null> {
+  const html = await fetchBandcampSearch(`${artist} ${track}`, 't');
+  if (!html) return null;
+
+  const blocks = extractResultBlocks(html);
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+
+    const urlMatch = block.match(/<a\s[^>]*href="(https?:\/\/[^"]*bandcamp\.com\/track\/[^"]+)"/);
+    if (!urlMatch) continue;
+    const resultUrl = urlMatch[1].replace(/\?from=search.*$/, '');
+
+    const titleLinks = [...block.matchAll(/<a\s[^>]*href="[^"]*bandcamp\.com\/track\/[^"]*"[^>]*>\s*([^<]+?)\s*<\/a>/g)];
+    const titleMatch = titleLinks.length > 1 ? titleLinks[1] : titleLinks[0];
+    const resultTrack = titleMatch ? titleMatch[1].trim() : '';
+    const resultArtist = extractResultArtist(block);
+
+    // First result: accept if artist matches
+    if (i === 0 && fuzzyMatch(resultArtist, artist)) {
+      return resultUrl;
+    }
+
+    if (fuzzyMatch(resultArtist, artist) && fuzzyMatch(resultTrack, track)) {
+      return resultUrl;
+    }
+  }
+  return null;
+}
+
+/**
+ * Construct Last.fm URLs (always valid, no network request needed).
+ */
+function lastfmArtistUrl(artist: string): string {
+  return `https://www.last.fm/music/${encodeURIComponent(artist).replace(/%20/g, '+')}`;
+}
+
+function lastfmAlbumUrl(artist: string, album: string): string {
+  const enc = (s: string) => encodeURIComponent(s).replace(/%20/g, '+');
+  return `https://www.last.fm/music/${enc(artist)}/${enc(album)}`;
+}
+
+function lastfmTrackUrl(artist: string, track: string): string {
+  const enc = (s: string) => encodeURIComponent(s).replace(/%20/g, '+');
+  return `https://www.last.fm/music/${enc(artist)}/_/${enc(track)}`;
 }
 
 export const GET: APIRoute = async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const artist = searchParams.get('artist');
+  const type = (searchParams.get('type') ?? 'album') as ListenType;
   const album = searchParams.get('album');
+  const track = searchParams.get('track');
 
-  if (!artist || !album) {
-    return new Response('Bad request: artist and album params required', { status: 400 });
+  if (!artist) {
+    return new Response('Bad request: artist param required', { status: 400 });
+  }
+  if (type === 'album' && !album) {
+    return new Response('Bad request: album param required for type=album', { status: 400 });
+  }
+  if (type === 'track' && !track) {
+    return new Response('Bad request: track param required for type=track', { status: 400 });
   }
 
-  const bandcampUrl = await searchBandcamp(artist, album);
+  let bandcampUrl: string | null = null;
+  if (type === 'artist') {
+    bandcampUrl = await searchBandcampArtist(artist);
+  } else if (type === 'album') {
+    bandcampUrl = await searchBandcampAlbum(artist, album!);
+  } else {
+    bandcampUrl = await searchBandcampTrack(artist, track!);
+  }
+
+  const headers = {
+    'content-type': 'application/json',
+    'cache-control': 'public, max-age=86400',
+  };
+
   if (bandcampUrl) {
-    return new Response(JSON.stringify({ url: bandcampUrl, source: 'bandcamp' }), {
-      status: 200,
-      headers: {
-        'content-type': 'application/json',
-        'cache-control': 'public, max-age=86400',
-      },
-    });
+    return new Response(JSON.stringify({ url: bandcampUrl, source: 'bandcamp' }), { status: 200, headers });
   }
 
-  return new Response(JSON.stringify({ url: lastfmUrl(artist, album), source: 'lastfm' }), {
-    status: 200,
-    headers: {
-      'content-type': 'application/json',
-      'cache-control': 'public, max-age=86400',
-    },
-  });
+  let fallback: string;
+  if (type === 'artist') {
+    fallback = lastfmArtistUrl(artist);
+  } else if (type === 'album') {
+    fallback = lastfmAlbumUrl(artist, album!);
+  } else {
+    fallback = lastfmTrackUrl(artist, track!);
+  }
+
+  return new Response(JSON.stringify({ url: fallback, source: 'lastfm' }), { status: 200, headers });
 };
