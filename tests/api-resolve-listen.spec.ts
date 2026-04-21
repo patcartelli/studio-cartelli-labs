@@ -10,6 +10,11 @@ test('resolve-listen type=album returns 400 when album param is missing', async 
   expect(res.status()).toBe(400);
 });
 
+test('resolve-listen type=track returns 400 when track param is missing', async ({ request }) => {
+  const res = await request.get('/api/resolve-listen?artist=Radiohead&type=track');
+  expect(res.status()).toBe(400);
+});
+
 test('resolve-listen returns 400 when both params are missing', async ({ request }) => {
   const res = await request.get('/api/resolve-listen');
   expect(res.status()).toBe(400);
