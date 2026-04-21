@@ -17,6 +17,22 @@ export interface Artist {
   url: string;
 }
 
+export interface Track {
+  rank: number;
+  name: string;       // track title
+  artist: string;
+  playcount: number;
+  imageUrl: string;   // album art (may be empty string)
+}
+
+interface LastfmTrackRaw {
+  '@attr'?: { rank?: string };
+  name?: string;
+  playcount?: string;
+  artist?: { name?: string } | string;
+  image?: LastfmImage[];
+}
+
 interface LastfmEnv {
   LASTFM_API_KEY?: string;
   LASTFM_USERNAME?: string;
@@ -193,6 +209,42 @@ export async function getArtistSimilar(
   } catch {
     return [];
   }
+}
+
+/**
+ * Fetch the user's top tracks for the past 7 days from Last.fm.
+ * Throws on network error, non-2xx response, API error, or malformed payload.
+ */
+export async function getTopTracks(env: LastfmEnv, limit: number): Promise<Track[]> {
+  const data = await fetchLastfm(
+    {
+      method: 'user.getTopTracks',
+      user: env.LASTFM_USERNAME!,
+      period: '7day',
+      limit: String(limit),
+    },
+    env
+  ) as { toptracks?: { track?: LastfmTrackRaw[] }; error?: number; message?: string };
+
+  const rawTracks = data.toptracks?.track;
+  if (!Array.isArray(rawTracks)) {
+    throw new Error('Last.fm response malformed: toptracks.track missing');
+  }
+
+  return rawTracks.map((raw, i): Track => {
+    const parsedRank = parseInt(raw['@attr']?.rank ?? '', 10);
+    const rank = Number.isFinite(parsedRank) ? parsedRank : i + 1;
+    const name = raw.name ?? 'Unknown track';
+    const artist =
+      typeof raw.artist === 'string'
+        ? raw.artist
+        : raw.artist?.name ?? 'Unknown artist';
+    const parsedPlaycount = parseInt(raw.playcount ?? '', 10);
+    const playcount = Number.isFinite(parsedPlaycount) ? parsedPlaycount : 0;
+    const extralarge = raw.image?.find((img) => img.size === 'extralarge');
+    const imageUrl = extralarge?.['#text'] ?? '';
+    return { rank, name, artist, playcount, imageUrl };
+  });
 }
 
 /**
