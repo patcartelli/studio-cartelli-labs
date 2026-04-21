@@ -35,6 +35,7 @@ function stripSuffixes(s: string): string {
 function fuzzyMatch(a: string, b: string): boolean {
   const na = normalize(stripSuffixes(a));
   const nb = normalize(stripSuffixes(b));
+  if (!na || !nb) return false;
   return na === nb || na.includes(nb) || nb.includes(na);
 }
 
@@ -184,7 +185,11 @@ function lastfmTrackUrl(artist: string, track: string): string {
 export const GET: APIRoute = async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const artist = searchParams.get('artist');
-  const type = (searchParams.get('type') ?? 'album') as ListenType;
+  const rawType = searchParams.get('type') ?? 'album';
+  if (rawType !== 'artist' && rawType !== 'album' && rawType !== 'track') {
+    return new Response('Bad request: type must be artist, album, or track', { status: 400 });
+  }
+  const type = rawType as ListenType;
   const album = searchParams.get('album');
   const track = searchParams.get('track');
 
