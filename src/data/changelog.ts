@@ -15,6 +15,22 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    project: 'chart',
+    date: '2026-04-21',
+    items: [
+      { label: 'feature',     text: 'Artist photos — lazy-loaded from TheAudioDB into artist grid tiles' },
+      { label: 'feature',     text: 'Listen links — Bandcamp lookup with Last.fm fallback for albums, artists, and tracks' },
+      { label: 'improvement', text: 'Track thumbnails — filled from top album art when Last.fm returns no image' },
+    ],
+  },
+  {
+    project: 'chart',
+    date: '2026-04-08',
+    items: [
+      { label: 'feature', text: 'Initial release — Last.fm top albums, artists, and tracks with grid + table views' },
+    ],
+  },
+  {
     project: 'network',
     date: '2026-04-20',
     items: [
