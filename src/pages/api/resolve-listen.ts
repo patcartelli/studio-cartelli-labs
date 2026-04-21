@@ -60,7 +60,7 @@ async function fetchBandcampSearch(query: string, itemType: string): Promise<str
  */
 function extractResultBlocks(html: string): string[] {
   const blocks: string[] = [];
-  const pattern = /<div class="searchresult[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<div class="searchresult|<\/div>|$)/g;
+  const pattern = /<li class="searchresult[^"]*"[^>]*>([\s\S]*?)<\/li>/g;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(html)) !== null && blocks.length < 5) {
     blocks.push(match[1]);
@@ -72,7 +72,7 @@ function extractResultBlocks(html: string): string[] {
  * Extract artist name from a Bandcamp result block ("by Artist Name").
  */
 function extractResultArtist(block: string): string {
-  const m = block.match(/<div>\s*by\s+([^<]+)<\/div>/);
+  const m = block.match(/<div class="subhead">\s*by\s+([^<]+)<\/div>/);
   return m ? m[1].trim() : '';
 }
 
@@ -85,10 +85,10 @@ async function searchBandcampArtist(artist: string): Promise<string | null> {
 
   const blocks = extractResultBlocks(html);
   for (const block of blocks) {
-    // Artist page URL: https://artist.bandcamp.com
-    const urlMatch = block.match(/<a\s[^>]*href="(https?:\/\/[^"]*\.bandcamp\.com\/?)"[^>]*>/);
+    // Artist page URL: extract from artcont link, strip query params
+    const urlMatch = block.match(/<a class="artcont"\s+href="([^"]+)"/);
     if (!urlMatch) continue;
-    const resultUrl = urlMatch[1].replace(/\?from=search.*$/, '');
+    const resultUrl = urlMatch[1].replace(/\?.*$/, '');
 
     // For artist results, the band name appears in a heading link
     const titleMatch = block.match(/<div class="heading">\s*<a[^>]*>\s*([^<]+?)\s*<\/a>/);
