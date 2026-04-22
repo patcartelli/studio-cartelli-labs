@@ -15,6 +15,22 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    project: 'site',
+    date: '2026-04-22',
+    items: [
+      { label: 'feature',     text: 'Dark mode — system preference seeded, manual toggle in nav and footer' },
+      { label: 'improvement', text: 'Studio Cartelli name added to nav alongside logomark' },
+      { label: 'improvement', text: 'Changelog page — sitewide update history at /changelog' },
+    ],
+  },
+  {
+    project: 'site',
+    date: '2026-04-11',
+    items: [
+      { label: 'improvement', text: 'Case study sections — scroll reveal, image animations, and typography polish' },
+    ],
+  },
+  {
     project: 'chart',
     date: '2026-04-21',
     items: [
