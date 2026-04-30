@@ -213,11 +213,12 @@ export const GET: APIRoute = async ({ request }) => {
 
   const kv = (env as unknown as { LASTFM_CHART_CACHE: KVNamespace }).LASTFM_CHART_CACHE;
 
+  const esc = encodeURIComponent;
   const cacheKey = type === 'album'
-    ? `listen:album:${artist}:${album}`
+    ? `listen:album:${esc(artist)}:${esc(album!)}`
     : type === 'track'
-    ? `listen:track:${artist}:${track}`
-    : `listen:artist:${artist}`;
+    ? `listen:track:${esc(artist)}:${esc(track!)}`
+    : `listen:artist:${esc(artist)}`;
 
   const headers = {
     'content-type': 'application/json',
@@ -233,12 +234,16 @@ export const GET: APIRoute = async ({ request }) => {
     return new Response(JSON.stringify(cached), { status: 200, headers });
   }
 
-  // Step 1: Try Odesli (best-effort; Last.fm URLs return null, falls through to Bandcamp)
-  const inputUrl = type === 'album'
-    ? lastfmAlbumUrl(artist, album!)
+  // Step 1: Try Odesli with a Spotify search URL (best-effort; indie/unlisted items fall through to Bandcamp)
+  // Odesli requires a streaming-platform URL — Last.fm URLs always return HTTP 400.
+  // Spotify search URLs are the best available option without a known entity ID.
+  // Odesli resolves mainstream releases; indie/unlisted items fall through to Bandcamp.
+  const odesliQuery = type === 'album'
+    ? `${artist} ${album}`
     : type === 'track'
-    ? lastfmTrackUrl(artist, track!)
-    : lastfmArtistUrl(artist);
+    ? `${artist} ${track}`
+    : artist;
+  const inputUrl = `https://open.spotify.com/search/${encodeURIComponent(odesliQuery)}`;
 
   const odesliUrl = await fetchOdesliLink(inputUrl);
   if (odesliUrl) {
