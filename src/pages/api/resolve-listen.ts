@@ -1,10 +1,18 @@
 // src/pages/api/resolve-listen.ts
-// Resolves a listen link: tries Bandcamp search first, falls back to Last.fm.
+// Resolves a listen link: tries Odesli first, then Bandcamp, then Last.fm. Results cached in KV.
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
+import { env } from 'cloudflare:workers';
+import { fetchOdesliLink } from '../../lib/odesli';
 
 type ListenType = 'artist' | 'album' | 'track';
+
+interface CacheMetadata {
+  fetchedAt: number;
+}
+
+const LISTEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days (D-08)
 
 /**
  * Normalize a string for comparison: lowercase, collapse whitespace, strip
@@ -203,6 +211,45 @@ export const GET: APIRoute = async ({ request }) => {
     return new Response('Bad request: track param required for type=track', { status: 400 });
   }
 
+  const kv = (env as unknown as { LASTFM_CHART_CACHE: KVNamespace }).LASTFM_CHART_CACHE;
+
+  const cacheKey = type === 'album'
+    ? `listen:album:${artist}:${album}`
+    : type === 'track'
+    ? `listen:track:${artist}:${track}`
+    : `listen:artist:${artist}`;
+
+  const headers = {
+    'content-type': 'application/json',
+    'cache-control': 'public, max-age=86400',
+  };
+
+  // KV cache read
+  const { value: cached, metadata } = await kv.getWithMetadata(cacheKey, {
+    type: 'json',
+  }) as { value: { url: string; source: string } | null; metadata: CacheMetadata | null };
+
+  if (cached && metadata && (Date.now() - metadata.fetchedAt) <= LISTEN_TTL_MS) {
+    return new Response(JSON.stringify(cached), { status: 200, headers });
+  }
+
+  // Step 1: Try Odesli (best-effort; Last.fm URLs return null, falls through to Bandcamp)
+  const inputUrl = type === 'album'
+    ? lastfmAlbumUrl(artist, album!)
+    : type === 'track'
+    ? lastfmTrackUrl(artist, track!)
+    : lastfmArtistUrl(artist);
+
+  const odesliUrl = await fetchOdesliLink(inputUrl);
+  if (odesliUrl) {
+    const result = { url: odesliUrl, source: 'odesli' };
+    await kv.put(cacheKey, JSON.stringify(result), {
+      metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
+    });
+    return new Response(JSON.stringify(result), { status: 200, headers });
+  }
+
+  // Step 2: Try Bandcamp
   let bandcampUrl: string | null = null;
   if (type === 'artist') {
     bandcampUrl = await searchBandcampArtist(artist);
@@ -212,15 +259,15 @@ export const GET: APIRoute = async ({ request }) => {
     bandcampUrl = await searchBandcampTrack(artist, track!);
   }
 
-  const headers = {
-    'content-type': 'application/json',
-    'cache-control': 'public, max-age=86400',
-  };
-
   if (bandcampUrl) {
-    return new Response(JSON.stringify({ url: bandcampUrl, source: 'bandcamp' }), { status: 200, headers });
+    const result = { url: bandcampUrl, source: 'bandcamp' };
+    await kv.put(cacheKey, JSON.stringify(result), {
+      metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
+    });
+    return new Response(JSON.stringify(result), { status: 200, headers });
   }
 
+  // Step 3: Last.fm permalink fallback
   let fallback: string;
   if (type === 'artist') {
     fallback = lastfmArtistUrl(artist);
@@ -230,5 +277,9 @@ export const GET: APIRoute = async ({ request }) => {
     fallback = lastfmTrackUrl(artist, track!);
   }
 
-  return new Response(JSON.stringify({ url: fallback, source: 'lastfm' }), { status: 200, headers });
+  const result = { url: fallback, source: 'lastfm' };
+  await kv.put(cacheKey, JSON.stringify(result), {
+    metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
+  });
+  return new Response(JSON.stringify(result), { status: 200, headers });
 };
