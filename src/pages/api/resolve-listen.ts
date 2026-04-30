@@ -47,127 +47,78 @@ function fuzzyMatch(a: string, b: string): boolean {
   return na === nb || na.includes(nb) || nb.includes(na);
 }
 
+interface BandcampResult {
+  type: string;
+  name: string;
+  band_name?: string;
+  item_url_path?: string;
+  item_url_root?: string;
+}
+
 /**
- * Fetch Bandcamp search HTML for the given query and item type.
+ * Query the Bandcamp JSON search API.
+ * search_filter: 'a' = album, 'b' = band/artist, 't' = track
  */
-async function fetchBandcampSearch(query: string, itemType: string): Promise<string | null> {
-  const searchUrl = `https://bandcamp.com/search?q=${encodeURIComponent(query)}&item_type=${itemType}`;
+async function fetchBandcampResults(query: string, searchFilter: string): Promise<BandcampResult[]> {
   try {
-    const res = await fetch(searchUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; StudioCartelli/1.0)' },
+    const res = await fetch('https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (compatible; StudioCartelli/1.0)',
+      },
+      body: JSON.stringify({
+        search_text: query,
+        search_filter: searchFilter,
+        full_page: false,
+        fan_id: null,
+      }),
     });
-    if (!res.ok) return null;
-    return await res.text();
+    if (!res.ok) return [];
+    const data = await res.json() as { auto?: { results?: BandcampResult[] } };
+    return data.auto?.results?.slice(0, 15) ?? [];
   } catch {
-    return null;
+    return [];
   }
 }
 
-/**
- * Extract up to 5 result blocks from Bandcamp search HTML.
- */
-function extractResultBlocks(html: string): string[] {
-  const blocks: string[] = [];
-  const pattern = /<li class="searchresult[^"]*"[^>]*>([\s\S]*?)<\/li>/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(html)) !== null && blocks.length < 5) {
-    blocks.push(match[1]);
-  }
-  return blocks;
-}
-
-/**
- * Extract artist name from a Bandcamp result block ("by Artist Name").
- */
-function extractResultArtist(block: string): string {
-  const m = block.match(/<div class="subhead">\s*by\s+([^<]+)<\/div>/);
-  return m ? m[1].trim() : '';
-}
-
-/**
- * Search Bandcamp for an artist page and return the URL if a match is found.
- */
 async function searchBandcampArtist(artist: string): Promise<string | null> {
-  const html = await fetchBandcampSearch(artist, 'b');
-  if (!html) return null;
-
-  const blocks = extractResultBlocks(html);
-  for (const block of blocks) {
-    // Artist page URL: extract from artcont link, strip query params
-    const urlMatch = block.match(/<a class="artcont"\s+href="([^"]+)"/);
-    if (!urlMatch) continue;
-    const resultUrl = urlMatch[1].replace(/\?.*$/, '');
-
-    // For artist results, the band name appears in a heading link
-    const titleMatch = block.match(/<div class="heading">\s*<a[^>]*>\s*([^<]+?)\s*<\/a>/);
-    const resultName = titleMatch ? titleMatch[1].trim() : '';
-
-    if (fuzzyMatch(resultName, artist)) {
-      return resultUrl;
+  const results = await fetchBandcampResults(artist, 'b');
+  for (const r of results) {
+    if (r.item_url_root && fuzzyMatch(r.name, artist)) {
+      return r.item_url_root;
     }
   }
   return null;
 }
 
-/**
- * Search Bandcamp for an album page and return the URL if a match is found.
- */
 async function searchBandcampAlbum(artist: string, album: string): Promise<string | null> {
-  const html = await fetchBandcampSearch(`${artist} ${album}`, 'a');
-  if (!html) return null;
-
-  const blocks = extractResultBlocks(html);
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-
-    const urlMatch = block.match(/<a\s[^>]*href="(https?:\/\/[^"]*bandcamp\.com\/album\/[^"]+)"/);
-    if (!urlMatch) continue;
-    const resultUrl = urlMatch[1].replace(/\?from=search.*$/, '');
-
-    const titleLinks = [...block.matchAll(/<a\s[^>]*href="[^"]*bandcamp\.com\/album\/[^"]*"[^>]*>\s*([^<]+?)\s*<\/a>/g)];
-    const titleMatch = titleLinks.length > 1 ? titleLinks[1] : titleLinks[0];
-    const resultAlbum = titleMatch ? titleMatch[1].trim() : '';
-    const resultArtist = extractResultArtist(block);
-
-    // First result: accept if artist matches, even if title match is looser
-    if (i === 0 && fuzzyMatch(resultArtist, artist)) {
-      return resultUrl;
+  const results = await fetchBandcampResults(`${artist} ${album}`, 'a');
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r.item_url_path) continue;
+    // First result: accept if artist matches
+    if (i === 0 && r.band_name && fuzzyMatch(r.band_name, artist)) {
+      return r.item_url_path;
     }
-
-    if (fuzzyMatch(resultArtist, artist) && fuzzyMatch(resultAlbum, album)) {
-      return resultUrl;
+    if (r.band_name && fuzzyMatch(r.band_name, artist) && fuzzyMatch(r.name, album)) {
+      return r.item_url_path;
     }
   }
   return null;
 }
 
-/**
- * Search Bandcamp for a track page and return the URL if a match is found.
- */
 async function searchBandcampTrack(artist: string, track: string): Promise<string | null> {
-  const html = await fetchBandcampSearch(`${artist} ${track}`, 't');
-  if (!html) return null;
-
-  const blocks = extractResultBlocks(html);
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-
-    const urlMatch = block.match(/<a\s[^>]*href="(https?:\/\/[^"]*bandcamp\.com\/track\/[^"]+)"/);
-    if (!urlMatch) continue;
-    const resultUrl = urlMatch[1].replace(/\?from=search.*$/, '');
-
-    const titleLinks = [...block.matchAll(/<a\s[^>]*href="[^"]*bandcamp\.com\/track\/[^"]*"[^>]*>\s*([^<]+?)\s*<\/a>/g)];
-    const titleMatch = titleLinks.length > 1 ? titleLinks[1] : titleLinks[0];
-    const resultTrack = titleMatch ? titleMatch[1].trim() : '';
-    const resultArtist = extractResultArtist(block);
-
+  const results = await fetchBandcampResults(`${artist} ${track}`, 't');
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r.item_url_path) continue;
     // First result: accept if artist matches
-    if (i === 0 && fuzzyMatch(resultArtist, artist)) {
-      return resultUrl;
+    if (i === 0 && r.band_name && fuzzyMatch(r.band_name, artist)) {
+      return r.item_url_path;
     }
-
-    if (fuzzyMatch(resultArtist, artist) && fuzzyMatch(resultTrack, track)) {
-      return resultUrl;
+    if (r.band_name && fuzzyMatch(r.band_name, artist) && fuzzyMatch(r.name, track)) {
+      return r.item_url_path;
     }
   }
   return null;
