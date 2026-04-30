@@ -8,6 +8,7 @@ export interface Album {
   artist: string;
   playcount: number;
   imageUrl: string; // may be empty string when Last.fm returns no art
+  url: string; // Last.fm permalink, e.g. https://www.last.fm/music/Radiohead/OK+Computer
 }
 
 export interface Artist {
@@ -23,6 +24,7 @@ export interface Track {
   artist: string;
   playcount: number;
   imageUrl: string;   // album art (may be empty string)
+  url: string; // Last.fm permalink
 }
 
 interface LastfmTrackRaw {
@@ -31,6 +33,7 @@ interface LastfmTrackRaw {
   playcount?: string;
   artist?: { name?: string } | string;
   image?: LastfmImage[];
+  url?: string;
 }
 
 interface LastfmEnv {
@@ -49,6 +52,7 @@ interface LastfmAlbumRaw {
   playcount?: string;
   artist?: { name?: string } | string;
   image?: LastfmImage[];
+  url?: string;
 }
 
 interface LastfmResponse {
@@ -140,7 +144,8 @@ export async function getTopAlbums(env: LastfmEnv, limit: number): Promise<Album
     const playcount = Number.isFinite(parsedPlaycount) ? parsedPlaycount : 0;
     const extralarge = raw.image?.find((img) => img.size === 'extralarge');
     const imageUrl = extralarge?.['#text'] ?? '';
-    return { rank, name, artist, playcount, imageUrl };
+    const url = raw.url ?? '';
+    return { rank, name, artist, playcount, imageUrl, url };
   });
 }
 
@@ -243,7 +248,8 @@ export async function getTopTracks(env: LastfmEnv, limit: number): Promise<Track
     const playcount = Number.isFinite(parsedPlaycount) ? parsedPlaycount : 0;
     const extralarge = raw.image?.find((img) => img.size === 'extralarge');
     const imageUrl = extralarge?.['#text'] ?? '';
-    return { rank, name, artist, playcount, imageUrl };
+    const url = raw.url ?? '';
+    return { rank, name, artist, playcount, imageUrl, url };
   });
 }
 
