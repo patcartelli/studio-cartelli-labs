@@ -15,6 +15,41 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    project: 'network',
+    date: '2026-05-01',
+    items: [
+      { label: 'feature',     text: 'Edge tooltips — hover any connection to see shared tags and similarity score' },
+      { label: 'feature',     text: 'Search and filter — find artists by name, filter by genre, adjust similarity threshold' },
+      { label: 'improvement', text: 'Mobile responsive — controls wrap at small viewports, 44px touch targets, double-tap zoom disabled' },
+      { label: 'improvement', text: 'Fullscreen button hidden on browsers that don\u2019t support the Fullscreen API' },
+      { label: 'improvement', text: 'Graph data cached server-side with freshness indicator and stale-data fallback' },
+    ],
+  },
+  {
+    project: 'network',
+    date: '2026-04-30',
+    items: [
+      { label: 'feature',     text: 'Shimmer skeleton loading states for artist tiles and graph while data resolves' },
+      { label: 'improvement', text: 'Reduced motion — shimmer animations respect prefers-reduced-motion' },
+    ],
+  },
+  {
+    project: 'chart',
+    date: '2026-04-30',
+    items: [
+      { label: 'improvement', text: 'Listen links upgraded to Odesli — resolves to Spotify, Apple Music, YouTube, and Bandcamp' },
+      { label: 'bugfix',      text: 'Bandcamp lookup switched from HTML scraper to JSON search API for reliability' },
+      { label: 'improvement', text: 'Hover state on listen link buttons' },
+    ],
+  },
+  {
+    project: 'chart',
+    date: '2026-04-29',
+    items: [
+      { label: 'improvement', text: 'Last.fm data cached server-side with a relative freshness indicator' },
+    ],
+  },
+  {
     project: 'site',
     date: '2026-04-22',
     items: [
