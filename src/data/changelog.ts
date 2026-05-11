@@ -35,6 +35,13 @@ export const changelog: ChangelogEntry[] = [
   },
   {
     project: 'chart',
+    date: '2026-05-09',
+    items: [
+      { label: 'improvement', text: 'Artist photos now resolved server-side — MusicBrainz → Wikimedia Commons → Wikidata → TheAudioDB → Deezer fallback chain; no more lazy-load flash' },
+    ],
+  },
+  {
+    project: 'chart',
     date: '2026-04-30',
     items: [
       { label: 'improvement', text: 'Listen links upgraded to Odesli — resolves to Spotify, Apple Music, YouTube, and Bandcamp' },
