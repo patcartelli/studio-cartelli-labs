@@ -35,6 +35,15 @@ export const changelog: ChangelogEntry[] = [
   },
   {
     project: 'chart',
+    date: '2026-05-11',
+    items: [
+      { label: 'feature',     text: 'Desktop layout — two-column view at wide screens with a horizontal card list alongside the cover grid' },
+      { label: 'feature',     text: 'Artist website links — resolved via MusicBrainz cascade: official site → Bandcamp → socials → Last.fm floor' },
+      { label: 'improvement', text: 'Cards show rank, thumbnail, play count, listen link, and artist link — buttons collapse to icon-only at narrow widths' },
+    ],
+  },
+  {
+    project: 'chart',
     date: '2026-05-09',
     items: [
       { label: 'improvement', text: 'Artist photos now resolved server-side — MusicBrainz → Wikimedia Commons → Wikidata → TheAudioDB → Deezer fallback chain; no more lazy-load flash' },
