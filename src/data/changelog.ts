@@ -16,6 +16,15 @@ export interface ChangelogEntry {
 export const changelog: ChangelogEntry[] = [
   {
     project: 'network',
+    date: '2026-05-13',
+    items: [
+      { label: 'feature',     text: 'Influence edges — artists connected by Wikidata influence relationships show directional arrowheads' },
+      { label: 'improvement', text: 'Influence edge tooltips show influencer → influenced direction' },
+      { label: 'improvement', text: 'Ghost fade animated — nodes and edges transition smoothly when filtered' },
+    ],
+  },
+  {
+    project: 'network',
     date: '2026-05-01',
     items: [
       { label: 'feature',     text: 'Edge tooltips — hover any connection to see shared tags and similarity score' },
