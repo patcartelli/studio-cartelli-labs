@@ -1,11 +1,15 @@
 // src/pages/api/proxy-image.ts
-// Proxies Last.fm CDN images server-side so the client canvas can draw
-// cross-origin images without tainting (CORS bypass via server fetch).
+// Proxies CDN images server-side so the browser never makes cross-origin requests.
+// - Last.fm CDN: canvas drawImage() requires same-origin (CORS bypass)
+// - Cover Art Archive: browser blocks CAA→archive.org redirect chain (ORB / NS_BINDING_ABORTED)
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
 
-const ALLOWED_HOST = 'lastfm.freetls.fastly.net';
+const ALLOWED_HOSTS = new Set([
+  'lastfm.freetls.fastly.net',
+  'coverartarchive.org', // 307 → archive.org CDN followed server-side
+]);
 
 export const GET: APIRoute = async ({ request }) => {
   const { searchParams } = new URL(request.url);
@@ -24,16 +28,18 @@ export const GET: APIRoute = async ({ request }) => {
 
   if (
     parsed.protocol !== 'https:' ||
-    parsed.hostname !== ALLOWED_HOST ||
+    !ALLOWED_HOSTS.has(parsed.hostname) ||
     parsed.username !== '' ||
     parsed.password !== ''
   ) {
     return new Response('Bad request: disallowed URL', { status: 400 });
   }
 
+  const SAFE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
+
   let upstream: Response;
   try {
-    upstream = await fetch(imageUrl);
+    upstream = await fetch(imageUrl, { signal: AbortSignal.timeout(8000) });
   } catch {
     return new Response('Upstream fetch failed', { status: 502 });
   }
@@ -42,9 +48,10 @@ export const GET: APIRoute = async ({ request }) => {
     return new Response('Upstream error', { status: 502 });
   }
 
-  const contentType = upstream.headers.get('content-type') ?? 'image/jpeg';
+  const contentType = upstream.headers.get('content-type') ?? '';
+  const mimeType = contentType.split(';')[0].trim();
 
-  if (!contentType.startsWith('image/')) {
+  if (!SAFE_MIME_TYPES.has(mimeType)) {
     return new Response('Upstream returned non-image content', { status: 502 });
   }
 
@@ -52,6 +59,7 @@ export const GET: APIRoute = async ({ request }) => {
     status: 200,
     headers: {
       'content-type': contentType,
+      'x-content-type-options': 'nosniff',
       'access-control-allow-origin': '*',
       'cache-control': 'public, max-age=3600',
     },
