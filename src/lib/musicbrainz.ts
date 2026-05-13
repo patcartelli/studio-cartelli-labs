@@ -84,7 +84,7 @@ async function mbFetch(url: string): Promise<unknown> {
   return res.json();
 }
 
-export async function resolveMBArtistUrl(artistName: string, fallback: string): Promise<string> {
+async function resolveMBArtistUrl(artistName: string, fallback: string): Promise<string> {
   try {
     const searchUrl = `${MB_BASE}/artist?query=${encodeURIComponent(artistName)}&limit=1&fmt=json`;
     const searchData = await mbFetch(searchUrl) as MBArtistSearchResult;
@@ -140,7 +140,7 @@ async function resolveCommonsFileUrl(filePageUrl: string): Promise<string> {
   }
 }
 
-export async function resolveMBArtistImageUrl(artistName: string): Promise<string> {
+async function resolveMBArtistImageUrl(artistName: string): Promise<string> {
   try {
     const searchUrl = `${MB_BASE}/artist?query=${encodeURIComponent(artistName)}&limit=1&fmt=json`;
     const searchData = await mbFetch(searchUrl) as MBArtistSearchResult;
@@ -178,14 +178,6 @@ async function resolveWikidataImageUrl(mbid: string): Promise<string> {
   return cdnUrl || raw; // fall back to Special:FilePath if imageinfo API fails
 }
 
-/**
- * Resolve all artist data in a single MB search + url-rels lookup.
- * Returns MBID, website URL, and artist photo URL from one search and one artist lookup —
- * compared to calling the three separate resolvers, this cuts MB API calls by ~60% per artist.
- *
- * The returned MBID is passed directly to resolveLatestReleaseCoverByMBID, eliminating the
- * redundant artist search that the old release resolver performed independently.
- */
 async function resolveDeezerImageUrl(artistName: string): Promise<string> {
   try {
     const url = `https://api.deezer.com/search/artist?q=${encodeURIComponent(artistName)}&limit=1`;
@@ -217,6 +209,14 @@ async function resolveTheAudioDBImageUrl(artistName: string, apiKey: string): Pr
   }
 }
 
+/**
+ * Resolve all artist data in a single MB search + url-rels lookup.
+ * Returns MBID, website URL, and artist photo URL from one search and one artist lookup —
+ * compared to calling the three separate resolvers, this cuts MB API calls by ~60% per artist.
+ *
+ * The returned MBID is passed directly to resolveLatestReleaseCoverByMBID, eliminating the
+ * redundant artist search that the old release resolver performed independently.
+ */
 export async function resolveArtistBundle(artistName: string, fallbackUrl: string, tadbApiKey = ''): Promise<ArtistBundle> {
   try {
     const searchUrl = `${MB_BASE}/artist?query=${encodeURIComponent(artistName)}&limit=1&fmt=json`;
