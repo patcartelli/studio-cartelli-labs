@@ -58,6 +58,7 @@ export async function getCachedLatestRelease(
   try {
     const release = await resolveLatestReleaseCoverByMBID(mbid);
     await kv.put(key, JSON.stringify(release), {
+      expirationTtl: RELEASE_TTL_SECONDS,
       metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
     });
     return release;

@@ -51,6 +51,7 @@ export async function getCachedArtistBundle(
   try {
     const bundle = await resolveArtistBundle(artistName, fallbackUrl, tadbApiKey);
     await kv.put(key, JSON.stringify(bundle), {
+      expirationTtl: BUNDLE_TTL_SECONDS,
       metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
     });
     return bundle;
