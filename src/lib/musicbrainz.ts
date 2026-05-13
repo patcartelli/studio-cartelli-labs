@@ -282,7 +282,7 @@ export async function resolveArtistBundle(artistName: string, fallbackUrl: strin
 export async function resolveLatestReleaseCoverByMBID(mbid: string): Promise<{ coverUrl: string; title: string }> {
   if (!mbid) return { coverUrl: '', title: '' };
   try {
-    const browseUrl = `${MB_BASE}/release-group?artist=${encodeURIComponent(mbid)}&limit=100&fmt=json`;
+    const browseUrl = `${MB_BASE}/release-group?artist=${encodeURIComponent(mbid)}&limit=100&sort=date&sortorder=desc&fmt=json`;
     const browseData = await mbFetch(browseUrl) as MBReleaseGroupBrowseResult;
     const releaseGroups = browseData['release-groups'] ?? [];
 
