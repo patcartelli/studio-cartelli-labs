@@ -2,7 +2,7 @@
 // KV-backed cache wrapper for artist image URL resolution.
 // Server-only: accepts KVNamespace as parameter. Do not import from client code.
 
-import { resolveMBArtistImageUrl } from './musicbrainz';
+import { resolveArtistBundle } from './musicbrainz';
 
 interface CacheMetadata {
   fetchedAt: number; // ms since epoch (Date.now())
@@ -41,7 +41,8 @@ export async function getCachedArtistImageUrl(
 
   // Cache miss or stale — resolve live via MB → Wikimedia Commons → Wikidata fallback
   try {
-    const url = await resolveMBArtistImageUrl(artistName); // '' if nothing resolves
+    const bundle = await resolveArtistBundle(artistName, '');
+    const url = bundle.imageUrl; // '' if nothing resolves
     const fetchedAt = Date.now();
     await kv.put(key, url, {
       metadata: { fetchedAt } satisfies CacheMetadata,

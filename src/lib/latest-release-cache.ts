@@ -33,10 +33,16 @@ export async function getCachedLatestRelease(
 
   const key = `artist-release-v7:${mbid}`;
 
-  const { value, metadata } = await kv.getWithMetadata(key, { type: 'text' }) as {
-    value: string | null;
-    metadata: CacheMetadata | null;
-  };
+  let value: string | null = null;
+  let metadata: CacheMetadata | null = null;
+  try {
+    ({ value, metadata } = await kv.getWithMetadata(key, { type: 'text' }) as {
+      value: string | null;
+      metadata: CacheMetadata | null;
+    });
+  } catch {
+    // KV unavailable — skip cache read, proceed to resolve
+  }
 
   if (value !== null) {
     try {
@@ -52,6 +58,7 @@ export async function getCachedLatestRelease(
   try {
     const release = await resolveLatestReleaseCoverByMBID(mbid);
     await kv.put(key, JSON.stringify(release), {
+      expirationTtl: RELEASE_TTL_SECONDS,
       metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
     });
     return release;

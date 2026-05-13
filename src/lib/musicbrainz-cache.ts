@@ -2,7 +2,7 @@
 // KV-backed cache wrapper for MusicBrainz artist URL resolution.
 // Server-only: accepts KVNamespace as parameter. Do not import from client code.
 
-import { resolveMBArtistUrl } from './musicbrainz';
+import { resolveArtistBundle } from './musicbrainz';
 
 interface CacheMetadata {
   fetchedAt: number; // ms since epoch (Date.now())
@@ -35,7 +35,8 @@ export async function getCachedMBUrl(
 
   // Cache miss or stale — fetch live from MusicBrainz
   try {
-    const url = await resolveMBArtistUrl(artistName, fallback);
+    const bundle = await resolveArtistBundle(artistName, fallback);
+    const url = bundle.url;
     const fetchedAt = Date.now();
     await kv.put(key, url, {
       metadata: { fetchedAt } satisfies CacheMetadata,

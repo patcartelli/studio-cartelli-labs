@@ -59,6 +59,7 @@ export const GET: APIRoute = async ({ request }) => {
     status: 200,
     headers: {
       'content-type': contentType,
+      'x-content-type-options': 'nosniff',
       'access-control-allow-origin': '*',
       'cache-control': 'public, max-age=3600',
     },

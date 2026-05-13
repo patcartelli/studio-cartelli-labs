@@ -24,10 +24,16 @@ export async function getCachedArtistBundle(
 ): Promise<ArtistBundle> {
   const key = `artist-bundle-v4:${artistName.toLowerCase()}`;
 
-  const { value, metadata } = await kv.getWithMetadata(key, { type: 'text' }) as {
-    value: string | null;
-    metadata: CacheMetadata | null;
-  };
+  let value: string | null = null;
+  let metadata: CacheMetadata | null = null;
+  try {
+    ({ value, metadata } = await kv.getWithMetadata(key, { type: 'text' }) as {
+      value: string | null;
+      metadata: CacheMetadata | null;
+    });
+  } catch {
+    // KV unavailable — skip cache read, proceed to resolve
+  }
 
   if (value !== null) {
     try {
@@ -45,6 +51,7 @@ export async function getCachedArtistBundle(
   try {
     const bundle = await resolveArtistBundle(artistName, fallbackUrl, tadbApiKey);
     await kv.put(key, JSON.stringify(bundle), {
+      expirationTtl: BUNDLE_TTL_SECONDS,
       metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
     });
     return bundle;
