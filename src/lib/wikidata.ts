@@ -79,8 +79,10 @@ export async function getInfluenceLinks(artistNames: string[]): Promise<Influenc
  * The HTTP→HTTPS upgrade is mandatory: Wikidata returns http:// URIs and chart.astro
  * is served over HTTPS — without the upgrade, browsers block the image as mixed content.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getWikidataArtistImageUrl(mbid: string): Promise<string> {
-  if (!mbid) return '';
+  if (!mbid || !UUID_RE.test(mbid)) return '';
 
   const query = `
     SELECT ?image WHERE {
