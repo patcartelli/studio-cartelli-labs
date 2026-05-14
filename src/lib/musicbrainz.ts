@@ -16,6 +16,9 @@ const EXCLUDED_TYPES = new Set([
 // Secondary types that indicate non-primary releases (excluded from "latest release" lookup).
 const EXCLUDED_RG_SECONDARY = new Set(['Live', 'Compilation', 'Remix', 'DJ-mix', 'Mixtape/Street']);
 
+// UUID regex for validating MBIDs before interpolating into external URLs (T-13-04).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface MBRelation {
   type: string;
   url: { resource: string };
@@ -193,6 +196,23 @@ async function resolveDeezerImageUrl(artistName: string): Promise<string> {
   }
 }
 
+async function resolveFanartImageUrl(mbid: string, apiKey: string): Promise<string> {
+  if (!apiKey) return '';
+  if (!mbid || !UUID_RE.test(mbid)) return '';
+  try {
+    const url = `https://webservice.fanart.tv/v3/music/${encodeURIComponent(mbid)}?api_key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': MB_USER_AGENT },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return '';
+    const data = await res.json() as { artistthumb?: Array<{ url?: string }> };
+    return data.artistthumb?.[0]?.url ?? '';
+  } catch {
+    return '';
+  }
+}
+
 async function resolveTheAudioDBImageUrl(artistName: string, apiKey: string): Promise<string> {
   if (!apiKey) return '';
   try {
@@ -217,7 +237,7 @@ async function resolveTheAudioDBImageUrl(artistName: string, apiKey: string): Pr
  * The returned MBID is passed directly to resolveLatestReleaseCoverByMBID, eliminating the
  * redundant artist search that the old release resolver performed independently.
  */
-export async function resolveArtistBundle(artistName: string, fallbackUrl: string, tadbApiKey = ''): Promise<ArtistBundle> {
+export async function resolveArtistBundle(artistName: string, fallbackUrl: string, tadbApiKey = '', fanartApiKey = ''): Promise<ArtistBundle> {
   try {
     const searchUrl = `${MB_BASE}/artist?query=${encodeURIComponent(artistName)}&limit=1&fmt=json`;
     const searchData = await mbFetch(searchUrl) as MBArtistSearchResult;
@@ -252,7 +272,8 @@ export async function resolveArtistBundle(artistName: string, fallbackUrl: strin
       imageUrl = await resolveWikidataImageUrl(mbid);
     }
     if (!imageUrl) {
-      imageUrl = await resolveTheAudioDBImageUrl(artistName, tadbApiKey)
+      imageUrl = await resolveFanartImageUrl(mbid, fanartApiKey)
+        || await resolveTheAudioDBImageUrl(artistName, tadbApiKey)
         || await resolveDeezerImageUrl(artistName);
     }
 

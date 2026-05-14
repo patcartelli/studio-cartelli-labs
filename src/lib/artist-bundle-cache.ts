@@ -20,9 +20,10 @@ export async function getCachedArtistBundle(
   kv: KVNamespace,
   artistName: string,
   fallbackUrl: string,
-  tadbApiKey = ''
+  tadbApiKey = '',
+  fanartApiKey = ''
 ): Promise<ArtistBundle> {
-  const key = `artist-bundle-v4:${artistName.toLowerCase()}`;
+  const key = `artist-bundle-v5:${artistName.toLowerCase()}`;
 
   let value: string | null = null;
   let metadata: CacheMetadata | null = null;
@@ -49,7 +50,7 @@ export async function getCachedArtistBundle(
   }
 
   try {
-    const bundle = await resolveArtistBundle(artistName, fallbackUrl, tadbApiKey);
+    const bundle = await resolveArtistBundle(artistName, fallbackUrl, tadbApiKey, fanartApiKey);
     await kv.put(key, JSON.stringify(bundle), {
       expirationTtl: BUNDLE_TTL_SECONDS,
       metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
