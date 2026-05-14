@@ -3,6 +3,7 @@
 // Server-only: no KV dependency. Do not import from client code.
 
 import { getWikidataArtistImageUrl } from './wikidata';
+import { extractGlowColorFromUrl } from './extract-color.ts';
 
 const MB_BASE = 'https://musicbrainz.org/ws/2';
 const MB_USER_AGENT = 'studio-cartelli/1.0 (cartelli@gmail.com)';
@@ -63,6 +64,7 @@ export interface ArtistBundle {
   mbid: string;
   url: string;      // website URL (D-03 cascade: official-homepage → bandcamp → social → Last.fm)
   imageUrl: string; // artist photo URL (MB image relation → Commons CDN → Wikidata P18)
+  glowColor?: string; // ambient hex color sampled from imageUrl; absent when extraction failed/skipped
 }
 
 // Convert MB partial date string to a sortable integer for descending sort.
@@ -246,7 +248,8 @@ export async function resolveArtistBundle(artistName: string, fallbackUrl: strin
       // MB rate-limited or no result — try TheAudioDB then Deezer by name for the photo.
       const imageUrl = await resolveTheAudioDBImageUrl(artistName, tadbApiKey)
         || await resolveDeezerImageUrl(artistName);
-      return { mbid: '', url: fallbackUrl, imageUrl };
+      const glowColor = imageUrl ? await extractGlowColorFromUrl(imageUrl) : undefined;
+      return { mbid: '', url: fallbackUrl, imageUrl, glowColor };
     }
 
     // One lookup for both website URL and image relation — same inc=url-rels response.
@@ -277,12 +280,14 @@ export async function resolveArtistBundle(artistName: string, fallbackUrl: strin
         || await resolveDeezerImageUrl(artistName);
     }
 
-    return { mbid, url, imageUrl };
+    const glowColor = imageUrl ? await extractGlowColorFromUrl(imageUrl) : undefined;
+    return { mbid, url, imageUrl, glowColor };
   } catch {
     // MB threw (503 rate limit, network error) — try TheAudioDB then Deezer by name.
     const imageUrl = await resolveTheAudioDBImageUrl(artistName, tadbApiKey).catch(() => '')
       || await resolveDeezerImageUrl(artistName).catch(() => '');
-    return { mbid: '', url: fallbackUrl, imageUrl };
+    const glowColor = imageUrl ? await extractGlowColorFromUrl(imageUrl) : undefined;
+    return { mbid: '', url: fallbackUrl, imageUrl, glowColor };
   }
 }
 

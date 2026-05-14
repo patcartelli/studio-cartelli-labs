@@ -23,7 +23,7 @@ export async function getCachedArtistBundle(
   tadbApiKey = '',
   fanartApiKey = ''
 ): Promise<ArtistBundle> {
-  const key = `artist-bundle-v5:${artistName.toLowerCase()}`;
+  const key = `artist-bundle-v6:${artistName.toLowerCase()}`;
 
   let value: string | null = null;
   let metadata: CacheMetadata | null = null;
