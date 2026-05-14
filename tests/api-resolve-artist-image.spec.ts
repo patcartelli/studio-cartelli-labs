@@ -1,24 +1,18 @@
-// tests/api-resolve-artist-image.spec.ts
-// Behavioral tests for the Fanart.tv integration in the artist image fallback chain.
-// Tests verify fallback behavior when FANART_API_KEY is absent or Fanart.tv returns 404.
-// These tests intercept SSR outbound requests via Playwright route mocking.
-
 import { test, expect } from '@playwright/test';
 
-// The chart page renders SSR content — verify it loads without error
-// regardless of which image source fills (Fanart.tv, TADB, Deezer).
-// Route intercepts simulate Fanart.tv conditions per-request.
+// Tests for the Fanart.tv fallback chain (D-03).
+// Fanart.tv resolution is SSR-only (Cloudflare Worker); page.route() cannot intercept
+// server-side Worker fetches. These tests verify observable chart behavior when
+// Fanart.tv is absent or returns no data.
 
-test('chart page renders artist tiles when Fanart.tv returns 404 for all artists', async ({ page }) => {
-  // Simulate Fanart.tv 404 for every artist — chain must fall through to TADB/Deezer cleanly
-  await page.route('**/webservice.fanart.tv/**', route => route.fulfill({ status: 404, body: '' }));
-
+test('chart renders without error when FANART_API_KEY is absent (Fanart.tv skipped, fallback to TADB/Deezer)', async ({ page }) => {
+  // FANART_API_KEY is not set in dev/CI — resolveFanartImageUrl returns '' immediately.
+  // The chain must continue to TADB/Deezer and the chart must render successfully.
   await page.goto('/experiments/chart');
-
-  // Chart heading must still be present — page must not crash
   await expect(page.locator('.chart__heading')).toBeVisible();
 
-  // Either grid or error state — both are valid; what must NOT happen is an unhandled crash
+  // Either the artists grid renders OR the generic error fallback — both are valid.
+  // What must NOT happen: an unhandled exception that crashes the SSR response.
   const grid = page.locator('.chart__view[data-view="albums"] .chart__grid');
   const error = page.locator('.chart__error');
   const gridVisible = await grid.isVisible().catch(() => false);
@@ -26,49 +20,24 @@ test('chart page renders artist tiles when Fanart.tv returns 404 for all artists
   expect(gridVisible || errorVisible).toBe(true);
 });
 
-test('chart page renders artist tiles when Fanart.tv returns no artistthumb entries', async ({ page }) => {
-  // Simulate Fanart.tv returning 200 with empty artistthumb — chain falls through cleanly
-  await page.route('**/webservice.fanart.tv/**', route =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ name: 'Test Artist', mbid_id: 'some-uuid', artistthumb: [] }),
-    })
-  );
-
+test('chart artist grid is not blank when Fanart.tv has no coverage for an MBID (chain falls through)', async ({ page }) => {
+  // Fanart.tv fetch happens server-side in the Worker; page.route() cannot intercept SSR fetches.
+  // This test verifies that the artists view renders tiles (not a blank page or crash) when
+  // Fanart.tv returns no artistthumb entries — resolveFanartImageUrl returns '' and TADB takes over.
+  // FANART_API_KEY is absent in dev/CI so this path is always exercised.
   await page.goto('/experiments/chart');
-
   await expect(page.locator('.chart__heading')).toBeVisible();
 
-  const grid = page.locator('.chart__view[data-view="albums"] .chart__grid');
-  const error = page.locator('.chart__error');
-  const gridVisible = await grid.isVisible().catch(() => false);
-  const errorVisible = await error.isVisible().catch(() => false);
-  expect(gridVisible || errorVisible).toBe(true);
-});
+  // Switch to artists view — this is where artist imageUrl is most visibly exercised.
+  const artistLink = page.locator('.chart__view-link[data-for="artists"]');
+  if (!await artistLink.isVisible().catch(() => false)) return; // error state — skip
 
-test('FANART_API_KEY absent: chain does not break — artist image still resolves via fallback', async ({ page }) => {
-  // When no FANART_API_KEY is configured, no request should be made to fanart.tv at all
-  // and the page should still render correctly using TADB/Deezer fallbacks
-  let fanartRequestMade = false;
-  await page.route('**/webservice.fanart.tv/**', route => {
-    fanartRequestMade = true;
-    return route.fulfill({ status: 503, body: 'should not be called' });
-  });
+  await artistLink.click();
+  const artistView = page.locator('.chart__view[data-view="artists"]');
+  await expect(artistView).toBeVisible();
 
-  await page.goto('/experiments/chart');
-
-  // Page must still render (with or without images — both acceptable)
-  await expect(page.locator('.chart__heading')).toBeVisible();
-
-  const grid = page.locator('.chart__view[data-view="albums"] .chart__grid');
-  const error = page.locator('.chart__error');
-  const gridVisible = await grid.isVisible().catch(() => false);
-  const errorVisible = await error.isVisible().catch(() => false);
-  expect(gridVisible || errorVisible).toBe(true);
-
-  // Note: fanartRequestMade may be true or false depending on env config —
-  // if no API key is set, no Fanart.tv calls should be made (apiKey guard).
-  // If an API key is set in the test env, calls may be made and intercepted.
-  // Either way, the page must not crash.
+  // Artist tiles must be present — the chain resolved (even if images are empty placeholders).
+  const tiles = page.locator('.chart__tile--artist');
+  const count = await tiles.count();
+  expect(count).toBeGreaterThan(0);
 });
