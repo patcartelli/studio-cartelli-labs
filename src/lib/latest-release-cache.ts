@@ -12,6 +12,7 @@ interface CacheMetadata {
 export interface LatestRelease {
   coverUrl: string;
   title: string;
+  date?: string; // ISO string from MusicBrainz first-release-date; may be YYYY, YYYY-MM, or YYYY-MM-DD
 }
 
 const RELEASE_TTL_SECONDS = 604800; // 7 days — CAA URLs are stable
@@ -31,7 +32,7 @@ export async function getCachedLatestRelease(
 ): Promise<LatestRelease> {
   if (!mbid) return { coverUrl: '', title: '' };
 
-  const key = `artist-release-v7:${mbid}`;
+  const key = `artist-release-v8:${mbid}`;
 
   let value: string | null = null;
   let metadata: CacheMetadata | null = null;

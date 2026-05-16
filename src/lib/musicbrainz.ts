@@ -305,7 +305,7 @@ export async function resolveArtistBundle(artistName: string, fallbackUrl: strin
  * Cover art verified via CAA's /release-group/{id} JSON endpoint (200 = art exists, 404 = none).
  * Returns '' when: no release groups found, none pass the secondary-type filter, none have CAA art.
  */
-export async function resolveLatestReleaseCoverByMBID(mbid: string): Promise<{ coverUrl: string; title: string }> {
+export async function resolveLatestReleaseCoverByMBID(mbid: string): Promise<{ coverUrl: string; title: string; date?: string }> {
   if (!mbid) return { coverUrl: '', title: '' };
   try {
     const browseUrl = `${MB_BASE}/release-group?artist=${encodeURIComponent(mbid)}&limit=100&sort=date&sortorder=desc&fmt=json`;
@@ -328,13 +328,17 @@ export async function resolveLatestReleaseCoverByMBID(mbid: string): Promise<{ c
         const caaRes = await fetch(`https://coverartarchive.org/release-group/${rg.id}`, {
           signal: AbortSignal.timeout(5000),
         });
-        if (caaRes.ok) return { coverUrl: `https://coverartarchive.org/release-group/${rg.id}/front-250`, title: rg.title };
+        if (caaRes.ok) return {
+          coverUrl: `https://coverartarchive.org/release-group/${rg.id}/front-250`,
+          title: rg.title,
+          date: rg['first-release-date'],
+        };
       } catch {
         // try next candidate
       }
     }
     // No CAA art found — return title of the newest candidate anyway so callers can display it.
-    return { coverUrl: '', title: sorted[0]?.title ?? '' };
+    return { coverUrl: '', title: sorted[0]?.title ?? '', date: sorted[0]?.['first-release-date'] };
   } catch {
     return { coverUrl: '', title: '' };
   }

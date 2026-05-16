@@ -5,6 +5,7 @@
 // Server-only. Do not import from client code.
 
 import { resolveArtistBundle, type ArtistBundle } from './musicbrainz';
+import { extractGlowColorFromUrl } from './extract-color';
 
 export type { ArtistBundle };
 
@@ -62,4 +63,39 @@ export async function getCachedArtistBundle(
     }
     return { mbid: '', url: fallbackUrl, imageUrl: '' };
   }
+}
+
+export async function prewarmMissingGlowColors(
+  kv: KVNamespace,
+  bundles: Array<{ name: string; bundle: ArtistBundle }>
+): Promise<Map<string, string>> {
+  const missing = bundles.filter(
+    ({ bundle }) => bundle.imageUrl && !bundle.glowColor
+  );
+
+  const results = await Promise.allSettled(
+    missing.map(async ({ name, bundle }) => {
+      const color = await extractGlowColorFromUrl(bundle.imageUrl);
+      if (!color) return null;
+      const updated: ArtistBundle = { ...bundle, glowColor: color };
+      const key = `artist-bundle-v6:${name.toLowerCase()}`;
+      try {
+        await kv.put(key, JSON.stringify(updated), {
+          expirationTtl: BUNDLE_TTL_SECONDS,
+          metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
+        });
+      } catch {
+        // KV write failure — color still returned for in-flight render
+      }
+      return { name, color };
+    })
+  );
+
+  const map = new Map<string, string>();
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      map.set(result.value.name, result.value.color);
+    }
+  }
+  return map;
 }
