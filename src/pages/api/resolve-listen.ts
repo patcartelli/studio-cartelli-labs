@@ -5,6 +5,7 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { fetchOdesliLink } from '../../lib/odesli';
+import { normalize, stripSuffixes, fuzzyMatch } from '../../lib/fuzzy';
 
 type ListenType = 'artist' | 'album' | 'track';
 
@@ -13,39 +14,6 @@ interface CacheMetadata {
 }
 
 const LISTEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days (D-08)
-
-/**
- * Normalize a string for comparison: lowercase, collapse whitespace, strip
- * leading "the ", and remove non-alphanumeric characters except spaces.
- */
-function normalize(s: string): string {
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/^the /, '')
-    .replace(/[^a-z0-9 ]/g, '');
-}
-
-/**
- * Strip common edition/remaster suffixes before comparison.
- * e.g. "OK Computer (Deluxe Edition)" → "OK Computer"
- */
-function stripSuffixes(s: string): string {
-  return s
-    .replace(/\s*\([^)]*(?:edition|remaster|deluxe|expanded|bonus|version|ep|single)[^)]*\)\s*$/gi, '')
-    .trim();
-}
-
-/**
- * Fuzzy string match: normalize + strip suffixes, then check if either contains the other.
- */
-function fuzzyMatch(a: string, b: string): boolean {
-  const na = normalize(stripSuffixes(a));
-  const nb = normalize(stripSuffixes(b));
-  if (!na || !nb) return false;
-  return na === nb || na.includes(nb) || nb.includes(na);
-}
 
 interface BandcampResult {
   type: string;
