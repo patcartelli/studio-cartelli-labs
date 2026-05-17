@@ -6,6 +6,8 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { fetchOdesliLink } from '../../lib/odesli';
 import { normalize, stripSuffixes, fuzzyMatch } from '../../lib/fuzzy';
+import { searchItunesAlbum, searchItunesTrack } from '../../lib/itunes';
+import { searchDeezerAlbum, searchDeezerTrack } from '../../lib/deezer';
 
 type ListenType = 'artist' | 'album' | 'track';
 
@@ -153,24 +155,31 @@ export const GET: APIRoute = async ({ request }) => {
     return new Response(JSON.stringify(cached), { status: 200, headers });
   }
 
-  // Step 1: Try Odesli with a Spotify search URL (best-effort; indie/unlisted items fall through to Bandcamp)
-  // Odesli requires a streaming-platform URL — Last.fm URLs always return HTTP 400.
-  // Spotify search URLs are the best available option without a known entity ID.
-  // Odesli resolves mainstream releases; indie/unlisted items fall through to Bandcamp.
-  const odesliQuery = type === 'album'
-    ? `${artist} ${album}`
-    : type === 'track'
-    ? `${artist} ${track}`
-    : artist;
-  const inputUrl = `https://open.spotify.com/search/${encodeURIComponent(odesliQuery)}`;
+  // Step 1: Resolve a real streaming-platform entity URL (iTunes → Deezer cascade) and feed
+  // it to Odesli. Odesli rejects search URLs and Last.fm URLs (HTTP 400), so a working
+  // entity URL is required to get a song.link landing page back. Skipped for type=artist
+  // because iTunes/Deezer search-by-album/track does not apply to artist lookups; artist
+  // links fall through directly to Bandcamp (Step 2) and Last.fm (Step 3).
+  if (type === 'album' || type === 'track') {
+    let entityUrl: string | null = null;
+    if (type === 'album') {
+      entityUrl = await searchItunesAlbum(artist, album!);
+      if (!entityUrl) entityUrl = await searchDeezerAlbum(artist, album!);
+    } else {
+      entityUrl = await searchItunesTrack(artist, track!);
+      if (!entityUrl) entityUrl = await searchDeezerTrack(artist, track!);
+    }
 
-  const odesliUrl = await fetchOdesliLink(inputUrl);
-  if (odesliUrl) {
-    const result = { url: odesliUrl, source: 'odesli' };
-    await kv.put(cacheKey, JSON.stringify(result), {
-      metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
-    });
-    return new Response(JSON.stringify(result), { status: 200, headers });
+    if (entityUrl) {
+      const odesliUrl = await fetchOdesliLink(entityUrl);
+      if (odesliUrl) {
+        const result = { url: odesliUrl, source: 'odesli' };
+        await kv.put(cacheKey, JSON.stringify(result), {
+          metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
+        });
+        return new Response(JSON.stringify(result), { status: 200, headers });
+      }
+    }
   }
 
   // Step 2: Try Bandcamp
