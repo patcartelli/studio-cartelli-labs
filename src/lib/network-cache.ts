@@ -37,11 +37,14 @@ export interface NetworkCacheResult {
  * Falls back to expired KV data with isStale: true if Last.fm is unreachable (NCACHE-03).
  * Wikidata failures are handled independently — empty influences[] is a valid degraded state (D-09).
  * Throws only if no cached or live data is available.
+ *
+ * @param _influencesFetcher - Injectable test seam for the Wikidata influences lookup; defaults to getInfluenceLinks.
  */
 export async function getCachedNetworkData(
   kv: KVNamespace,
   env: LastfmEnv,
-  period: string
+  period: string,
+  _influencesFetcher: (names: string[]) => Promise<InfluenceLink[]> = getInfluenceLinks
 ): Promise<NetworkCacheResult> {
   const key = `network:${period}`;
   const { value, metadata } = await kv.getWithMetadata(key, {
@@ -64,7 +67,7 @@ export async function getCachedNetworkData(
     // D-09: Wikidata is independently failable; empty influences[] is a valid degraded state
     let influences: InfluenceLink[] = [];
     try {
-      influences = await getInfluenceLinks(artistNames);
+      influences = await _influencesFetcher(artistNames);
     } catch {
       /* silently degrade */
     }
