@@ -9,7 +9,6 @@
 import { test, expect } from '@playwright/test';
 import { Miniflare } from 'miniflare';
 import { getCachedNetworkData } from '../src/lib/network-cache';
-import type { KVNamespace } from '@cloudflare/workers-types';
 
 // ---------------------------------------------------------------------------
 // Last.fm response shapes (must match parsing logic in src/lib/lastfm.ts)
@@ -88,7 +87,8 @@ test('NCACHE-04: getCachedNetworkData returns influences: [] when injected influ
       kvNamespaces: ['LASTFM_CHART_CACHE'],
     });
 
-    const kv = await mf.getKVNamespace('LASTFM_CHART_CACHE') as unknown as KVNamespace;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const kv = await mf.getKVNamespace('LASTFM_CHART_CACHE') as unknown as any;
 
     // Pre-populate KV with a stale entry (1000s ago, well past the 900s TTL).
     // The stale seed has influences to prove that the live path OVERWRITES them with []
