@@ -15,6 +15,15 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    project: 'chart',
+    date: '2026-05-21',
+    items: [
+      { label: 'improvement', text: 'Rank number is now the dominant number on each card — larger type, grouped with play count directly beneath it' },
+      { label: 'improvement', text: 'Play count shown as comma-formatted full number ("2,341 plays") instead of abbreviated form' },
+      { label: 'improvement', text: 'Rank and plays form a single unit on the left of the card — the separate far-right plays column is gone' },
+    ],
+  },
+  {
     project: 'network',
     date: '2026-05-13',
     items: [
