@@ -22,6 +22,14 @@ export const GET: APIRoute = async ({ request }) => {
   if (!artist) {
     return new Response('Bad request: artist param required', { status: 400 });
   }
+  // Length cap: unbounded input lets anyone mint unlimited KV keys (and KV
+  // keys max out at 512 bytes after encoding). Real names fit well under this.
+  const MAX_PARAM_LENGTH = 200;
+  for (const value of [artist, album, track]) {
+    if (value && value.length > MAX_PARAM_LENGTH) {
+      return new Response('Bad request: param exceeds maximum length', { status: 400 });
+    }
+  }
   if (type === 'album' && !album) {
     return new Response('Bad request: album param required for type=album', { status: 400 });
   }

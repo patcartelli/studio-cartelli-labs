@@ -20,6 +20,14 @@ test('resolve-listen returns 400 when both params are missing', async ({ request
   expect(res.status()).toBe(400);
 });
 
+test('resolve-listen returns 400 when a param exceeds the length cap', async ({ request }) => {
+  // Unbounded input lets anyone mint unlimited KV keys and fan out upstream
+  // API calls; real artist/album names fit comfortably under the cap.
+  const long = 'a'.repeat(400);
+  const res = await request.get(`/api/resolve-listen?artist=${long}&album=ok`);
+  expect(res.status()).toBe(400);
+});
+
 test('resolve-listen returns JSON with url and source fields', async ({ request }) => {
   const res = await request.get('/api/resolve-listen?artist=Radiohead&album=OK+Computer');
   expect(res.status()).toBe(200);

@@ -17,9 +17,16 @@ export interface ResolvedListen {
 
 interface CacheMetadata {
   fetchedAt: number;
+  /** Logical TTL for this entry; defaults to LISTEN_TTL_MS when absent. */
+  ttlMs?: number;
 }
 
 const LISTEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+// Last.fm-floor results usually mean the upstream providers failed (possibly
+// transiently) — re-resolve after an hour instead of locking in for a week.
+const FALLBACK_TTL_MS = 60 * 60 * 1000; // 1 hour
+// Physical KV expiry so abandoned keys don't accumulate forever.
+const KV_EXPIRATION_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 // --- Bandcamp helpers (copy verbatim from resolve-listen.ts lines 20–95) ---
 interface BandcampResult {
@@ -136,7 +143,7 @@ export async function resolveListenLink(
     // KV unavailable — proceed to live cascade
   }
 
-  if (cached && metadata && (Date.now() - metadata.fetchedAt) <= LISTEN_TTL_MS) {
+  if (cached && metadata && (Date.now() - metadata.fetchedAt) <= (metadata.ttlMs ?? LISTEN_TTL_MS)) {
     return cached;
   }
 
@@ -158,6 +165,7 @@ export async function resolveListenLink(
         try {
           await kv.put(cacheKey, JSON.stringify(result), {
             metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
+            expirationTtl: KV_EXPIRATION_SECONDS,
           });
         } catch { /* KV write failure — still return result */ }
         return result;
@@ -176,6 +184,7 @@ export async function resolveListenLink(
     try {
       await kv.put(cacheKey, JSON.stringify(result), {
         metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
+        expirationTtl: KV_EXPIRATION_SECONDS,
       });
     } catch { /* swallow KV write failure */ }
     return result;
@@ -190,7 +199,8 @@ export async function resolveListenLink(
   const result: ResolvedListen = { url: fallback, source: 'lastfm' };
   try {
     await kv.put(cacheKey, JSON.stringify(result), {
-      metadata: { fetchedAt: Date.now() } satisfies CacheMetadata,
+      metadata: { fetchedAt: Date.now(), ttlMs: FALLBACK_TTL_MS } satisfies CacheMetadata,
+      expirationTtl: KV_EXPIRATION_SECONDS,
     });
   } catch { /* swallow KV write failure */ }
   return result;
