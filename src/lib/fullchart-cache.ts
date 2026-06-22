@@ -75,8 +75,10 @@ export async function getFullChartAlbums(
     return { data: rows, fetchedAt };
   } catch (err) {
     // Fall back to expired KV data if available (mirrors D-05 from lastfm-cache.ts).
+    // Use 0 (not Date.now()) when metadata is missing so the caller can tell this is
+    // stale fallback data, not a fresh fetch (CR review WR-04).
     if (value !== null) {
-      return { data: value, fetchedAt: metadata?.fetchedAt ?? Date.now() };
+      return { data: value, fetchedAt: metadata?.fetchedAt ?? 0 };
     }
     throw err;
   }
