@@ -37,7 +37,7 @@ test('chart-list clamps negative offset to 0 and oversized limit to 100 (T-18-04
   expect(body.limit).toBe(100);
 });
 
-test('chart-list rows carry only lightweight fields (no listenUrl, url, or glowColor)', async ({ request }) => {
+test('chart-list rows carry lightweight fields including url (no listenUrl or glowColor)', async ({ request }) => {
   const res = await request.get('/api/chart-list');
   expect(res.status()).toBe(200);
   const body = await res.json();
@@ -49,9 +49,10 @@ test('chart-list rows carry only lightweight fields (no listenUrl, url, or glowC
     expect(row).toHaveProperty('artist');
     expect(row).toHaveProperty('playcount');
     expect(row).toHaveProperty('imageUrl');
-    // Proves lightweight no-enrichment shape — none of these enrichment fields present
+    // url is a raw Last.fm permalink (not enrichment) — must be present (REVL-01)
+    expect(row).toHaveProperty('url');
+    // Proves no enrichment fields present (LIST-04 safeguard still intact)
     expect(row).not.toHaveProperty('listenUrl');
-    expect(row).not.toHaveProperty('url');
     expect(row).not.toHaveProperty('glowColor');
   }
 });
