@@ -168,6 +168,11 @@ test('hover overlay appears and tracks (REVL-03)', async ({ browser }) => {
 
     const rows = page.locator('.chart-list[data-view="albums"] .text-list .text-row');
 
+    // The chart list sits far below the fold (under the grid). mouse.move uses viewport
+    // coordinates and elementFromPoint only resolves inside the viewport, so the row MUST be
+    // scrolled into view before hovering — otherwise the cursor lands on empty space (D-11).
+    await rows.nth(0).scrollIntoViewIfNeeded();
+
     // Move cursor over the first row
     const firstBox = await rows.nth(0).boundingBox();
     if (!firstBox) return;
@@ -182,6 +187,7 @@ test('hover overlay appears and tracks (REVL-03)', async ({ browser }) => {
     expect(firstSrc).toBe('https://lastfm.freetls.fastly.net/i/u/300x300/fixture1.jpg');
 
     // Move to the second row — overlay should update its src to the second fixture image
+    await rows.nth(1).scrollIntoViewIfNeeded();
     const secondBox = await rows.nth(1).boundingBox();
     if (!secondBox) return;
     await page.mouse.move(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height / 2);
