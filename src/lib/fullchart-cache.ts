@@ -7,7 +7,7 @@ import { getTopAlbums } from './lastfm';
 import type { PipelineEnv } from './chart-pipeline';
 
 // Cache key for the full lightweight weekly album chart (versioned to allow safe invalidation).
-export const FULLCHART_KEY = 'chart-list:albums:fullchart:v1';
+export const FULLCHART_KEY = 'chart-list:albums:fullchart:v2';
 
 // TTL matches the assembled-cache convention (15 minutes).
 const FULLCHART_TTL_SECONDS = 900;
@@ -15,13 +15,15 @@ const FULLCHART_TTL_SECONDS = 900;
 // High limit: fetches the entire weekly chart in a single Last.fm call.
 const HIGH_LIMIT = 1000;
 
-// Lightweight album row — derived from Album (lastfm.ts) with url dropped (LIST-04 safeguard).
+// Lightweight album row — derived from Album (lastfm.ts).
+// url is a raw Last.fm getTopAlbums permalink — NOT enrichment, no LIST-04 violation.
 export interface FullChartAlbum {
   rank: number;
   name: string;
   artist: string;
   playcount: number;
   imageUrl: string;
+  url: string; // Last.fm permalink (raw getTopAlbums field) — NOT enrichment, no LIST-04 violation
 }
 
 interface FullChartMetadata {
@@ -38,7 +40,7 @@ interface FullChartMetadata {
  *   (2) On cold/stale: calls getTopAlbums once, writes lightweight rows with fetchedAt metadata, returns them.
  *   (3) On getTopAlbums throwing with an expired value present: returns the expired value.
  *   (4) On getTopAlbums throwing with no cached value: rethrows.
- *   (5) Stored rows contain only rank/name/artist/playcount/imageUrl (no url, no enrichment).
+ *   (5) Stored rows contain rank/name/artist/playcount/imageUrl/url (url is the raw Last.fm permalink, no enrichment).
  */
 export async function getFullChartAlbums(
   kv: KVNamespace,
@@ -59,13 +61,14 @@ export async function getFullChartAlbums(
     const albums = await getTopAlbums(env, HIGH_LIMIT);
     const fetchedAt = Date.now();
 
-    // Map to lightweight FullChartAlbum rows — drop url to satisfy LIST-04 safeguard.
+    // Map to lightweight FullChartAlbum rows — url is the raw Last.fm permalink (not enrichment).
     const rows: FullChartAlbum[] = albums.map((album) => ({
       rank: album.rank,
       name: album.name,
       artist: album.artist,
       playcount: album.playcount,
       imageUrl: album.imageUrl,
+      url: album.url,  // Last.fm permalink — raw getTopAlbums field, no enrichment
     }));
 
     await kv.put(FULLCHART_KEY, JSON.stringify(rows), {
