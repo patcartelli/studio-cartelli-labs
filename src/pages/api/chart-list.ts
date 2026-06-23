@@ -1,6 +1,7 @@
 // src/pages/api/chart-list.ts
 // Lightweight offset/limit slice endpoint over the full-chart cache (Plan 18-02).
-// Reads from getFullChartAlbums — no MusicBrainz, glow, or Odesli enrichment (LIST-04).
+// Reads from getFullChartAlbums — rows carry a raw Last.fm url permalink but NO MusicBrainz,
+// glow, or Odesli enrichment (LIST-04 intact; url is a raw getTopAlbums field, not enrichment).
 // On a cold cache, the helper lazily fills it via one Last.fm call (D-09).
 export const prerender = false;
 
