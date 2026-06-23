@@ -6,6 +6,7 @@ export const prerender = false;
 
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
+import type { PipelineEnv } from '../../lib/chart-pipeline';
 import { getCachedArtistBundleReadOnly } from '../../lib/artist-bundle-cache';
 
 // D-03: omit last.fm-host URLs — these are cascade last-resort fallbacks, not genuine external sites.
@@ -15,7 +16,9 @@ const LASTFM_HOST_RE = /^https?:\/\/(www\.)?last\.fm\//i;
 
 export const POST: APIRoute = async ({ request }) => {
   // 503 guard: KV binding required (mirrors chart-list.ts pattern)
-  if (!env.LASTFM_CHART_CACHE) {
+  const fullEnv = env as unknown as PipelineEnv;
+  const kv = fullEnv.LASTFM_CHART_CACHE;
+  if (!kv) {
     return new Response(JSON.stringify({ error: 'KV binding unavailable' }), {
       status: 503,
       headers: { 'Content-Type': 'application/json' },
@@ -60,7 +63,7 @@ export const POST: APIRoute = async ({ request }) => {
     // KV-get-only: getCachedArtistBundleReadOnly never calls MusicBrainz (D-02 / LIST-04)
     const results = await Promise.all(
       unique.map(async (name) => {
-        const bundle = await getCachedArtistBundleReadOnly(env.LASTFM_CHART_CACHE, name);
+        const bundle = await getCachedArtistBundleReadOnly(kv, name);
         // D-03: filter out last.fm-host fallback URLs — only genuine external sites shown
         const websiteUrl =
           bundle?.url && !LASTFM_HOST_RE.test(bundle.url) ? bundle.url : null;
