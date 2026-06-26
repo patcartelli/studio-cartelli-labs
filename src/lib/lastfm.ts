@@ -1,5 +1,5 @@
 // src/lib/lastfm.ts
-// Minimal Last.fm API client for the /experiments/chart page.
+// Minimal Last.fm API client for the /lab/chart page.
 // Server-only: reads API key from Cloudflare runtime env. Do not import from client code.
 
 export interface Album {

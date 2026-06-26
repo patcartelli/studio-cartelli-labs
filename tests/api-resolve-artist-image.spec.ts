@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 test('chart renders without error when FANART_API_KEY is absent (Fanart.tv skipped, fallback to TADB/Deezer)', async ({ page }) => {
   // FANART_API_KEY is not set in dev/CI — resolveFanartImageUrl returns '' immediately.
   // The chain must continue to TADB/Deezer and the chart must render successfully.
-  await page.goto('/experiments/chart');
+  await page.goto('/lab/chart');
   await expect(page.locator('.chart__heading')).toBeVisible();
 
   // Either the artists grid renders OR the generic error fallback — both are valid.
@@ -25,7 +25,7 @@ test('chart artist grid is not blank when Fanart.tv has no coverage for an MBID 
   // This test verifies that the artists view renders tiles (not a blank page or crash) when
   // Fanart.tv returns no artistthumb entries — resolveFanartImageUrl returns '' and TADB takes over.
   // FANART_API_KEY is absent in dev/CI so this path is always exercised.
-  await page.goto('/experiments/chart');
+  await page.goto('/lab/chart');
   await expect(page.locator('.chart__heading')).toBeVisible();
 
   // Switch to artists view — this is where artist imageUrl is most visibly exercised.
