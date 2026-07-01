@@ -153,79 +153,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
                 ))}
               </div>
             </div>
-            <div class="chart__col-cards">
-              <div class="chart__card-list" role="list">
-                {albums.length > 0 && (() => {
-                  const hero = albums[0];
-                  const heroWebsiteUrl = `https://www.last.fm/music/${encodeURIComponent(hero.artist)}`;
-                  return (
-                    <div class="chart__hero-card" role="listitem" data-artist-name={hero.artist}>
-                      {hero.imageUrl ? (
-                        <img class="chart__hero-card__img"
-                             src={hero.imageUrl}
-                             alt=""
-                             width="400" height="533"
-                             loading="eager" />
-                      ) : null}
-                      <div class="chart__hero-card__overlay">
-                        <span class="chart__hero-card__rank">#1</span>
-                        <span class="chart__hero-card__name">{hero.name}</span>
-                        <span class="chart__hero-card__plays">{hero.playcount} plays</span>
-                        <div class="chart__hero-card__links">
-                          <span class="chart__listen-link"
-                                data-artist={hero.artist}
-                                data-album={hero.name}
-                                data-type="album">
-                            <span class="chart__shimmer-bar chart__shimmer"></span>
-                          </span>
-                          <a class="chart__artist-link"
-                             href={heroWebsiteUrl}
-                             target="_blank" rel="noopener noreferrer"
-                             aria-label={`${hero.artist} website`}>
-                            <span class="chart__card-action-text">website</span>
-                            <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">language</span>
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                {albums.slice(1).map((album) => (
-                  <div class="chart__card chart__shimmer" role="listitem" data-artist-name={album.artist}>
-                    <div class="chart__card-rank-block"
-                         role="img"
-                         aria-label={`${album.rank}. ${formatPlaysLong(album.playcount)} plays`}>
-                      <span class="chart__card-rank-number" aria-hidden="true">{album.rank}</span>
-                      <span class="chart__card-plays-inline" aria-hidden="true">{formatPlaysLong(album.playcount)} plays</span>
-                    </div>
-                    <div class="chart__card-thumb chart__shimmer">
-                      {album.imageUrl ? (
-                        <img src={album.imageUrl} alt="" width="88" height="88" loading="lazy" />
-                      ) : (
-                        <div class="chart__card-thumb-placeholder" aria-hidden="true"></div>
-                      )}
-                    </div>
-                    <div class="chart__card-text">
-                      <span class="chart__card-title" title={album.name}>{album.name}</span>
-                      <span class="chart__card-artist" title={album.artist}>{album.artist}</span>
-                    </div>
-                    <div class="chart__card-actions">
-                      <span class="chart__listen-link" data-artist={album.artist} data-album={album.name} data-type="album">
-                        <span class="chart__shimmer-bar chart__shimmer"></span>
-                      </span>
-                      <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">open_in_new</span>
-                      <a class="chart__artist-link"
-                         href={`https://www.last.fm/music/${encodeURIComponent(album.artist)}`}
-                         target="_blank" rel="noopener noreferrer"
-                         aria-label={`${album.artist} website`}>
-                        <span class="chart__card-action-text">website</span>
-                        <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">language</span>
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
 
@@ -240,68 +167,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
                     <div class="chart__artist-info">
                       <span class="chart__artist-name">{artist.name}</span>
                       <span class="chart__artist-plays">{artist.playcount} plays</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div class="chart__col-cards">
-              <div class="chart__card-list" role="list">
-                {artists.length > 0 && (() => {
-                  const hero = artists[0];
-                  const heroWebsiteUrl = `https://www.last.fm/music/${encodeURIComponent(hero.name)}`;
-                  return (
-                    <div class="chart__hero-card" role="listitem" data-artist-name={hero.name}>
-                      <div class="chart__hero-card__overlay">
-                        <span class="chart__hero-card__rank">#1</span>
-                        <span class="chart__hero-card__name">{hero.name}</span>
-                        <span class="chart__hero-card__plays">{hero.playcount} plays</span>
-                        <div class="chart__hero-card__links">
-                          <span class="chart__listen-link"
-                                data-artist={hero.name}
-                                data-type="artist">
-                            <span class="chart__shimmer-bar chart__shimmer"></span>
-                          </span>
-                          <a class="chart__artist-link"
-                             href={heroWebsiteUrl}
-                             target="_blank" rel="noopener noreferrer"
-                             aria-label={`${hero.name} website`}>
-                            <span class="chart__card-action-text">website</span>
-                            <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">language</span>
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                {artists.slice(1).map((artist, i) => (
-                  <div class="chart__card chart__shimmer" role="listitem" data-artist-name={artist.name}>
-                    <div class="chart__card-rank-block"
-                         role="img"
-                         aria-label={`${i + 2}. ${formatPlaysLong(artist.playcount)} plays`}>
-                      <span class="chart__card-rank-number" aria-hidden="true">{i + 2}</span>
-                      <span class="chart__card-plays-inline" aria-hidden="true">{formatPlaysLong(artist.playcount)} plays</span>
-                    </div>
-                    <div class="chart__card-thumb">
-                      <div class="chart__card-thumb-placeholder" aria-hidden="true"></div>
-                    </div>
-                    <div class="chart__card-text">
-                      <span class="chart__card-title" title={artist.name}>{artist.name}</span>
-                      {/* Release block shimmer — reserves space for Phase 3 fill (D-03) */}
-                      <div class="chart__shimmer" style="min-height: 44px; margin-top: var(--space-2xs)"></div>
-                    </div>
-                    <div class="chart__card-actions">
-                      <span class="chart__listen-link" data-artist={artist.name} data-type="artist">
-                        <span class="chart__shimmer-bar chart__shimmer"></span>
-                      </span>
-                      <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">open_in_new</span>
-                      <a class="chart__artist-link"
-                         href={`https://www.last.fm/music/${encodeURIComponent(artist.name)}`}
-                         target="_blank" rel="noopener noreferrer"
-                         aria-label={`${artist.name} website`}>
-                        <span class="chart__card-action-text">website</span>
-                        <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">language</span>
-                      </a>
                     </div>
                   </div>
                 ))}
@@ -331,64 +196,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
                     <div class="chart__tile-overlay" aria-hidden="true">
                       <span class="chart__overlay-artist">{track.artist}</span>
                       <span class="chart__overlay-album">{track.name}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div class="chart__col-cards">
-              <div class="chart__card-list" role="list">
-                {tracksWithArt.length > 0 && (() => {
-                  const hero = tracksWithArt[0];
-                  return (
-                    <div class="chart__hero-card" role="listitem" data-artist-name={hero.artist}>
-                      {hero.imageUrl ? (
-                        <img class="chart__hero-card__img"
-                             src={hero.imageUrl}
-                             alt=""
-                             width="400" height="533"
-                             loading="eager" />
-                      ) : null}
-                      <div class="chart__hero-card__overlay">
-                        <span class="chart__hero-card__rank">#1</span>
-                        <span class="chart__hero-card__name">{hero.name}</span>
-                        <span class="chart__hero-card__plays">{hero.playcount} plays</span>
-                        <div class="chart__hero-card__links">
-                          <span class="chart__listen-link"
-                                data-artist={hero.artist}
-                                data-track={hero.name}
-                                data-type="track">
-                            <span class="chart__shimmer-bar chart__shimmer"></span>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                {tracksWithArt.slice(1).map((track) => (
-                  <div class="chart__card chart__shimmer" role="listitem" data-artist-name={track.artist}>
-                    <div class="chart__card-rank-block"
-                         role="img"
-                         aria-label={`${track.rank}. ${formatPlaysLong(track.playcount)} plays`}>
-                      <span class="chart__card-rank-number" aria-hidden="true">{track.rank}</span>
-                      <span class="chart__card-plays-inline" aria-hidden="true">{formatPlaysLong(track.playcount)} plays</span>
-                    </div>
-                    <div class="chart__card-thumb chart__shimmer">
-                      {track.imageUrl ? (
-                        <img src={track.imageUrl} alt="" width="88" height="88" loading="lazy" />
-                      ) : (
-                        <div class="chart__card-thumb-placeholder" aria-hidden="true"></div>
-                      )}
-                    </div>
-                    <div class="chart__card-text">
-                      <span class="chart__card-title" title={track.name}>{track.name}</span>
-                      <span class="chart__card-artist" title={track.artist}>{track.artist}</span>
-                    </div>
-                    <div class="chart__card-actions">
-                      <span class="chart__listen-link" data-artist={track.artist} data-track={track.name} data-type="track">
-                        <span class="chart__shimmer-bar chart__shimmer"></span>
-                      </span>
-                      <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">open_in_new</span>
                     </div>
                   </div>
                 ))}
@@ -627,9 +434,10 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
 
   /* ---- 2x2 grid base (mobile-first) ---- */
   .chart__grid {
+    --chart-grid-gap: 5px; /* chart-local thin seam — D-05/D-06; does not touch global --grid-gap */
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--grid-gap);
+    gap: var(--chart-grid-gap);
     margin-bottom: var(--space-xl);
   }
 
@@ -733,11 +541,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     text-align: right;
     font-variant-numeric: tabular-nums;
     color: var(--color-on-surface-dimmed);
-  }
-
-  .chart__listen-link {
-    color: var(--color-on-surface-muted);
-    font-size: var(--text-body-medium);
   }
 
   /* ---- Artist tiles ---- */
@@ -967,51 +770,15 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     background-size: 200% 100%;
   }
 
-  .chart__shimmer-bar {
-    display: inline-block;
-    width: 60px;
-    height: 9px;
-    border-radius: 4px;
-    vertical-align: middle;
-  }
-
   @keyframes chart-fade-in {
     from { opacity: 0; }
     to { opacity: 1; }
-  }
-
-  :global(.chart__listen-link a) {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    border: 1px solid currentColor;
-    border-radius: 999px;
-    font-size: var(--text-label-medium);
-    text-decoration: none;
-    color: inherit;
-    animation: chart-fade-in 150ms ease forwards;
-  }
-
-  :global(.chart__listen-link a:hover) {
-    background: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
-    color: var(--color-on-surface);
-    text-decoration: none;
-  }
-
-  :global(.chart__listen-link a:focus-visible) {
-    outline: 2px solid var(--color-on-surface);
-    outline-offset: 2px;
   }
 
   @media (prefers-reduced-motion: reduce) {
     .chart__shimmer {
       animation: none;
       background: var(--color-surface-subtle);
-    }
-    :global(.chart__listen-link a) {
-      animation: none;
-      opacity: 1;
     }
   }
 
@@ -1031,337 +798,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
   /* ---- Two-column desktop layout (≥1024px) ---- */
   .chart__body {
     display: block; /* mobile-first: stacked */
-  }
-
-  .chart__col-cards {
-    container-type: inline-size;
-    container-name: card-list;
-  }
-
-  @media (min-width: 1024px) {
-    .chart__body {
-      display: flex;
-      align-items: flex-start;
-      gap: var(--space-md); /* 24px */
-    }
-
-    .chart__col-grid {
-      flex: 0 0 60%;
-      order: 2;
-    }
-
-    .chart__col-cards {
-      flex: 0 0 40%;
-      min-width: 0;
-      order: 1;
-    }
-  }
-
-  /* ---- Hero card (rank #1) ---- */
-  .chart__hero-card {
-    position: relative;
-    overflow: clip;                        /* REQUIRED: prevents glow bleed (D-04) */
-    aspect-ratio: 3 / 4;
-    background-color: var(--color-surface-subtle);
-    border-radius: 4px;
-    margin-bottom: var(--space-xs);
-  }
-
-  .chart__hero-card::before {
-    content: '';
-    position: absolute;
-    inset: -40px;
-    z-index: 0;
-    background: radial-gradient(ellipse 80% 60% at 50% 100%, var(--card-glow-color, transparent), transparent);
-    pointer-events: none;
-  }
-
-  .chart__hero-card__img,
-  .chart__hero-card img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    position: relative;
-    z-index: 1;
-  }
-
-  .chart__hero-card__overlay {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 2;
-    padding: var(--space-sm);
-    background: linear-gradient(
-      to top,
-      rgba(0, 0, 0, 0.75) 0%,
-      rgba(0, 0, 0, 0.15) 55%,
-      transparent 100%
-    );
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2xs);
-  }
-
-  .chart__hero-card__rank {
-    font-family: var(--font-mono);
-    font-size: var(--text-label-medium);
-    line-height: var(--lh-label-medium);
-    color: rgba(255, 255, 255, 0.55);
-  }
-
-  .chart__hero-card__name {
-    font-family: var(--font-display);
-    font-size: var(--text-headline-large);
-    font-weight: 600;
-    line-height: var(--lh-headline-large);
-    color: #ffffff;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .chart__hero-card__plays {
-    font-family: var(--font-display);
-    font-size: var(--text-title-large);
-    font-weight: 600;
-    line-height: var(--lh-title-large);
-    color: rgba(255, 255, 255, 0.85);
-  }
-
-  .chart__hero-card__links {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    min-height: 44px;
-    flex-wrap: wrap;
-  }
-
-  .chart__hero-card__links .chart__listen-link {
-    color: rgba(255, 255, 255, 0.75);
-    font-size: var(--text-body-medium);
-    font-family: var(--font-body);
-  }
-
-  :global(.chart__hero-card__links .chart__listen-link a) {
-    border-color: rgba(255, 255, 255, 0.6);
-    color: rgba(255, 255, 255, 0.6);
-    text-decoration: none;
-  }
-
-  :global(.chart__hero-card__links .chart__listen-link a:hover) {
-    background: rgba(255, 255, 255, 0.1);
-    color: #ffffff;
-    text-decoration: none;
-  }
-
-  .chart__hero-card__links .chart__artist-link {
-    color: rgba(255, 255, 255, 0.75);
-  }
-
-  .chart__hero-card__links .chart__artist-link:hover {
-    color: #ffffff;
-    text-decoration: underline;
-  }
-
-  /* ---- Material Symbols Outlined icon font ---- */
-  .material-symbols-outlined {
-    font-family: 'Material Symbols Outlined';
-    font-weight: normal;
-    font-style: normal;
-    font-size: 24px;
-    display: inline-block;
-    line-height: 1;
-    text-transform: none;
-    letter-spacing: normal;
-    word-wrap: normal;
-    white-space: nowrap;
-    direction: ltr;
-  }
-
-  /* ---- Card list ---- */
-  .chart__card-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .chart__card {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs); /* 8px */
-    padding: var(--space-xs) 0;
-    overflow: clip;
-    position: relative;
-    isolation: isolate;
-  }
-
-  .chart__card::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background: radial-gradient(ellipse 60% 150% at -5% 50%, var(--card-glow-color, transparent), transparent 70%);
-    opacity: 0.32;
-    pointer-events: none;
-  }
-
-  .chart__card-thumb {
-    width: 88px;
-    height: 88px;
-    flex-shrink: 0;
-    overflow: hidden;
-    background-color: var(--color-surface-subtle);
-  }
-
-  .chart__card-thumb img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .chart__card-thumb-placeholder {
-    width: 100%;
-    height: 100%;
-    background-color: var(--color-surface-subtle);
-  }
-
-  .chart__card-rank-block {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    flex-shrink: 0;
-    width: 52px;
-  }
-
-  .chart__card-rank-number {
-    font-family: var(--font-mono);
-    font-size: var(--text-headline-medium);
-    line-height: var(--lh-headline-medium);
-    color: var(--color-on-surface);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .chart__card-plays-inline {
-    font-family: var(--font-mono);
-    font-size: var(--text-body-small);
-    line-height: var(--lh-body-small);
-    color: var(--color-on-surface-muted);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .chart__card-text {
-    flex: 1;
-    min-width: 0; /* required for text-overflow: ellipsis to work in flex child */
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2xs); /* 4px */
-  }
-
-  .chart__card-title {
-    font-family: 'DM Sans', sans-serif;
-    font-size: var(--text-body-medium);
-    font-weight: 600;
-    color: var(--color-on-surface);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .chart__card-artist {
-    font-family: 'DM Sans', sans-serif;
-    font-size: var(--text-body-small);
-    color: var(--color-on-surface-dimmed);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .chart__card-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs); /* 8px */
-    flex-shrink: 0;
-  }
-
-  .chart__artist-link {
-    text-decoration: none;
-    color: var(--color-on-surface-muted);
-    font-size: var(--text-body-medium);
-    font-family: var(--font-body);
-  }
-
-  .chart__artist-link:hover {
-    color: var(--color-on-surface);
-    text-decoration: underline;
-  }
-
-  /* Phase 17: artists view release section — horizontal row layout */
-  .chart__card-release {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs); /* 8px */
-    margin-top: var(--space-2xs); /* 4px */
-  }
-
-  .chart__card-release img {
-    width: 48px;
-    height: 48px;
-    object-fit: cover;
-    display: block;
-    flex-shrink: 0;
-  }
-
-  .chart__card-release-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2xs); /* 4px */
-    min-width: 0;
-  }
-
-  .chart__card-release-title {
-    font-family: 'DM Sans', sans-serif;
-    font-size: var(--text-body-small); /* 12px */
-    line-height: var(--lh-body-small); /* 1.33 */
-    color: var(--color-on-surface-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 120px;
-  }
-
-  .chart__card-release-year {
-    font-family: var(--font-mono);
-    font-size: var(--text-label-small); /* 11px */
-    line-height: var(--lh-label-small); /* 1.45 */
-    color: var(--color-on-surface-dimmed);
-    white-space: nowrap;
-  }
-
-  /* ---- Action text sizing ---- */
-  .chart__card-action-text { display: inline; font-size: var(--text-label-medium); }
-  .chart__card-action-icon { display: none; }
-
-  @container card-list (max-width: 480px) {
-    /* two-row stacking — actions wrap to second row at narrow widths */
-    .chart__card {
-      flex-wrap: wrap;
-      align-items: flex-start;
-    }
-
-    .chart__card-actions {
-      width: 100%;
-      min-height: 44px;
-      align-items: center;
-    }
-  }
-
-  @container card-list (max-width: 375px) {
-    .chart__card-rank-number {
-      font-size: var(--text-headline-small);
-    }
   }
 
   /* ---- Copy modal ---- */
@@ -2085,17 +1521,9 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
   type ArtistMap = Map<string, ChartArtist>;
 
   function fallbackAll() {
-    document.querySelectorAll<HTMLElement>(
-      '.chart__card, .chart__hero-card, .chart__card-thumb, .chart__shimmer-bar'
-    ).forEach(el => el.classList.remove('chart__shimmer'));
-
-    const hideTargets = document.querySelectorAll<HTMLElement>(
-      '.chart__card-thumb-placeholder, .chart__shimmer-bar, .chart__tile--artist .chart__tile-placeholder'
-    );
-    const releaseShimmers = document.querySelectorAll<HTMLElement>(
-      '.chart__card-text div.chart__shimmer'
-    );
-    const allHide = [...hideTargets, ...releaseShimmers];
+    const allHide = Array.from(document.querySelectorAll<HTMLElement>(
+      '.chart__tile--artist .chart__tile-placeholder'
+    ));
 
     allHide.forEach(el => el.classList.add('chart__hide-on-timeout'));
 
@@ -2108,86 +1536,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     }
   }
 
-  function inferSource(url: string): 'odesli' | 'bandcamp' | 'lastfm' {
-    if (url.includes('song.link') || url.includes('odesli.co')) return 'odesli';
-    if (url.includes('bandcamp.com')) return 'bandcamp';
-    return 'lastfm';
-  }
-
-  function injectListenLink(span: HTMLSpanElement, url: string, entityLabel: string) {
-    const source = inferSource(url);
-    const a = document.createElement('a');
-    a.href = url;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.textContent = source === 'bandcamp' ? 'bandcamp'
-      : source === 'odesli' ? 'song.link'
-      : 'last.fm';
-    a.setAttribute('aria-label', `Listen to ${entityLabel} on ${a.textContent}`);
-    span.textContent = '';
-    span.appendChild(a);
-  }
-
-  function injectArtistThumb(thumb: HTMLElement, imageUrl: string) {
-    const placeholder = thumb.querySelector('.chart__card-thumb-placeholder');
-    if (placeholder) placeholder.remove();
-
-    const img = document.createElement('img');
-    img.src = imageUrl;
-    img.alt = '';
-    img.loading = 'lazy';
-    img.width = 88;
-    img.height = 88;
-    thumb.appendChild(img);
-  }
-
-  function injectArtistHeroPhoto(heroCard: HTMLElement, imageUrl: string) {
-    const overlay = heroCard.querySelector('.chart__hero-card__overlay');
-    const img = document.createElement('img');
-    img.className = 'chart__hero-card__img';
-    img.src = imageUrl;
-    img.alt = '';
-    img.width = 400;
-    img.height = 533;
-    img.loading = 'eager';
-    // Inline styles required: dynamically created elements don't carry Astro's
-    // scope attribute, so the scoped .chart__hero-card__img rule won't match.
-    img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;position:relative;z-index:1';
-    heroCard.insertBefore(img, overlay);
-  }
-
-  function injectReleaseBlock(cardText: HTMLElement, release: LatestRelease) {
-    const shimmerDiv = cardText.querySelector<HTMLElement>('div.chart__shimmer');
-    if (shimmerDiv) shimmerDiv.remove();
-
-    const block = document.createElement('div');
-    block.className = 'chart__card-release';
-
-    const coverImg = document.createElement('img');
-    coverImg.src = release.coverUrl;
-    coverImg.alt = '';
-    coverImg.loading = 'lazy';
-    coverImg.width = 48;
-    coverImg.height = 48;
-    block.appendChild(coverImg);
-
-    const info = document.createElement('div');
-    info.className = 'chart__card-release-info';
-
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'chart__card-release-title';
-    titleSpan.textContent = release.title;
-
-    const yearSpan = document.createElement('span');
-    yearSpan.className = 'chart__card-release-year';
-    yearSpan.textContent = release.date ? release.date.slice(0, 4) : '';
-
-    info.appendChild(titleSpan);
-    info.appendChild(yearSpan);
-    block.appendChild(info);
-    cardText.appendChild(block);
-  }
-
   function fillArtistGridTiles(artistMap: ArtistMap) {
     document.querySelectorAll<HTMLElement>('.chart__tile--artist').forEach(tile => {
       const name = tile.dataset.artist?.toLowerCase() ?? '';
@@ -2198,98 +1546,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
         tile.classList.add('has-photo');
       }
     });
-  }
-
-  function fillHero(heroCard: HTMLElement, item: ChartAlbum | ChartTrack | ChartArtist, artistMap: ArtistMap, view: string) {
-    heroCard.classList.remove('chart__shimmer');
-    const aName = heroCard.dataset.artistName?.toLowerCase() ?? '';
-    const artistData = artistMap.get(aName);
-    if (artistData?.glowColor) heroCard.style.setProperty('--card-glow-color', artistData.glowColor);
-
-    const span = heroCard.querySelector<HTMLSpanElement>('.chart__listen-link');
-    if (span) {
-      if (view === 'albums') {
-        const album = item as ChartAlbum;
-        if (album.listenUrl) {
-          injectListenLink(span, album.listenUrl, `${album.name} by ${album.artist}`);
-        } else {
-          span.textContent = '';
-        }
-      } else if (view === 'tracks') {
-        const track = item as ChartTrack;
-        if (track.listenUrl) {
-          injectListenLink(span, track.listenUrl, `${track.name} by ${track.artist}`);
-        } else {
-          span.textContent = '';
-        }
-      }
-      // artists view: no listenUrl field — skip
-    }
-
-    const artistLink = heroCard.querySelector<HTMLAnchorElement>('.chart__artist-link');
-    if (artistLink && artistData?.url) artistLink.href = artistData.url;
-
-    if (view === 'artists' && artistData?.imageUrl) {
-      injectArtistHeroPhoto(heroCard, artistData.imageUrl);
-    }
-  }
-
-  function fillCard(card: HTMLElement, item: ChartAlbum | ChartTrack | ChartArtist | undefined, artistMap: ArtistMap, view: string) {
-    if (!item) return;
-    card.classList.remove('chart__shimmer');
-    const aName = card.dataset.artistName?.toLowerCase() ?? '';
-    const artistData = artistMap.get(aName);
-    if (artistData?.glowColor) card.style.setProperty('--card-glow-color', artistData.glowColor);
-
-    const span = card.querySelector<HTMLSpanElement>('.chart__listen-link');
-    if (span) {
-      if (view === 'albums') {
-        const album = item as ChartAlbum;
-        if (album.listenUrl) {
-          injectListenLink(span, album.listenUrl, `${album.name} by ${album.artist}`);
-        } else {
-          span.textContent = '';
-        }
-      } else if (view === 'tracks') {
-        const track = item as ChartTrack;
-        if (track.listenUrl) {
-          injectListenLink(span, track.listenUrl, `${track.name} by ${track.artist}`);
-        } else {
-          span.textContent = '';
-        }
-      } else if (view === 'artists') {
-        const artist = item as ChartArtist;
-        span.textContent = '';
-        // artists have no listenUrl — clear any shimmer-bar content
-        void artist;
-      }
-    }
-
-    const artistLink = card.querySelector<HTMLAnchorElement>('.chart__artist-link');
-    if (artistLink && artistData?.url) artistLink.href = artistData.url;
-
-    if (view === 'artists') {
-      const thumb = card.querySelector<HTMLElement>('.chart__card-thumb');
-      if (thumb && artistData?.imageUrl) injectArtistThumb(thumb, artistData.imageUrl);
-      const cardText = card.querySelector<HTMLElement>('.chart__card-text');
-      if (cardText && artistData?.latestRelease) injectReleaseBlock(cardText, artistData.latestRelease);
-    }
-  }
-
-  function fillTab(view: string, items: Array<ChartAlbum | ChartTrack | ChartArtist>, artistMap: ArtistMap) {
-    const container = document.querySelector<HTMLElement>(`.chart__view[data-view="${view}"] .chart__card-list`);
-    if (!container) return;
-    const heroCard = container.querySelector<HTMLElement>('.chart__hero-card');
-    if (heroCard && items[0]) fillHero(heroCard, items[0], artistMap, view);
-    const rankedCards = Array.from(container.querySelectorAll<HTMLElement>('.chart__card'));
-    function scheduleNext(i: number) {
-      if (i >= rankedCards.length) return;
-      requestAnimationFrame(() => {
-        fillCard(rankedCards[i], items[i + 1], artistMap, view);
-        scheduleNext(i + 1);
-      });
-    }
-    scheduleNext(0);
   }
 
   // ---- Text list helpers ----
@@ -2345,7 +1601,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       const rankEl = row.querySelector<HTMLElement>('.text-row__rank');
       if (rankEl) {
         rankEl.textContent = String(album.rank); // full unpadded rank (D-14)
-        rankEl.removeAttribute('aria-label'); // remove SSR placeholder aria-label
+        rankEl.setAttribute('aria-label', `Rank ${album.rank}`);
       }
 
       const albumEl = row.querySelector<HTMLElement>('.text-row__album');
@@ -2402,9 +1658,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       const data = await res.json() as ChartDataResponse;
       const artistMap: ArtistMap = new Map(data.artists.map(a => [a.name.toLowerCase(), a]));
       fillArtistGridTiles(artistMap);
-      fillTab('albums',  data.albums,  artistMap);
-      fillTab('artists', data.artists, artistMap);
-      fillTab('tracks',  data.tracks,  artistMap);
     } catch (err) {
       clearTimeout(timeoutId);
       console.error('[chart] progressive fill failed:', err);
@@ -2872,22 +2125,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       img.addEventListener('load', () => {
         wrap.classList.remove('chart__shimmer');
       }, { once: true });
-    }
-  });
-
-  // ---- Card thumb shimmer removal ----
-  document.querySelectorAll<HTMLImageElement>('.chart__card-thumb img[loading="lazy"]').forEach(img => {
-    const thumb = img.closest<HTMLElement>('.chart__card-thumb');
-    if (!thumb) return;
-    const card = thumb.closest<HTMLElement>('.chart__card');
-    const clear = () => {
-      thumb.classList.remove('chart__shimmer');
-      card?.classList.remove('chart__shimmer');
-    };
-    if (img.complete) {
-      clear();
-    } else {
-      img.addEventListener('load', clear, { once: true });
     }
   });
 </script>
