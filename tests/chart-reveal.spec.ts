@@ -69,7 +69,7 @@ async function listSectionPresent(page: import('@playwright/test').Page): Promis
 
 test('list render (REVL-07)', async ({ page }) => {
   await registerRoutes(page);
-  await page.goto('/experiments/chart');
+  await page.goto('/lab/chart');
 
   if (!await listSectionPresent(page)) return; // skip gracefully if section absent
 
@@ -106,7 +106,7 @@ test('list render (REVL-07)', async ({ page }) => {
 test('reduced-motion: no overlay element appended (REVL-06)', async ({ page }) => {
   // global config sets reducedMotion: 'reduce' — engine short-circuits without creating overlay
   await registerRoutes(page);
-  await page.goto('/experiments/chart');
+  await page.goto('/lab/chart');
 
   if (!await listSectionPresent(page)) return;
 
@@ -132,7 +132,7 @@ test('touch device shows inline thumb, no overlay (REVL-04)', async ({ browser }
   const page = await context.newPage();
   try {
     await registerRoutes(page);
-    await page.goto('http://localhost:4321/experiments/chart');
+    await page.goto('http://localhost:4321/lab/chart');
 
     if (!await listSectionPresent(page)) return;
 
@@ -162,7 +162,7 @@ test('hover overlay appears and tracks (REVL-03)', async ({ browser }) => {
   const page = await context.newPage();
   try {
     await registerRoutes(page);
-    await page.goto('http://localhost:4321/experiments/chart');
+    await page.goto('http://localhost:4321/lab/chart');
 
     if (!await listSectionPresent(page)) return;
 
@@ -213,7 +213,7 @@ test('keyboard focus reveals art pinned top-right (REVL-05)', async ({ browser }
   const page = await context.newPage();
   try {
     await registerRoutes(page);
-    await page.goto('http://localhost:4321/experiments/chart');
+    await page.goto('http://localhost:4321/lab/chart');
 
     if (!await listSectionPresent(page)) return;
 
@@ -254,7 +254,7 @@ test('keyboard focus reveals art pinned top-right (REVL-05)', async ({ browser }
 
 test('new links pass axe with zero violations (a11y)', async ({ page }) => {
   await registerRoutes(page);
-  await page.goto('/experiments/chart');
+  await page.goto('/lab/chart');
 
   if (!await listSectionPresent(page)) return;
 

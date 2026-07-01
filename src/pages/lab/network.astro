@@ -1,0 +1,1418 @@
+---
+// src/pages/lab/network.astro
+// SSR: serves network graph data from KV cache (getCachedNetworkData).
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import type { Artist } from '../../lib/lastfm';
+import { getCachedNetworkData } from '../../lib/network-cache';
+import { changelog } from '../../data/changelog';
+
+const networkChangelog = changelog.filter((e) => e.project === 'network');
+
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[Number(m) - 1]} ${Number(d)}, ${y}`;
+}
+
+// --- Types ---
+interface GraphNode {
+  id: string;
+  name: string;
+  playcount: number;
+  url: string;
+}
+
+interface GraphLink {
+  source: string;
+  target: string;
+  sharedTags: string[];
+  similarity: number;
+  influenceDirection?: 'forward' | 'reverse';
+}
+
+interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
+// --- Period param ---
+const VALID_PERIODS = ['7day', '1month', '3month', '6month', '12month'] as const;
+type Period = (typeof VALID_PERIODS)[number];
+
+const rawPeriod = Astro.url.searchParams.get('period') ?? '';
+const period: Period = (VALID_PERIODS as readonly string[]).includes(rawPeriod)
+  ? (rawPeriod as Period)
+  : '1month';
+
+// --- Env (runtime bindings via Cloudflare Workers API) ---
+import { env } from 'cloudflare:workers';
+const cfEnv = env as { LASTFM_API_KEY?: string; LASTFM_USERNAME?: string };
+const kv = (env as unknown as { LASTFM_CHART_CACHE: KVNamespace }).LASTFM_CHART_CACHE;
+
+let hasError = false;
+let graphData: GraphData = { nodes: [], links: [] };
+let isStale = false;
+let fetchedAt = 0; // assigned in successful fetch path only
+let uniqueTags: string[] = [];
+let nodeTagsMap: Record<string, string[]> = {};
+
+function formatRelativeAge(ts: number): string {
+  const ageMs = Date.now() - ts;
+  const ageSec = Math.floor(ageMs / 1000);
+  const ageMin = Math.floor(ageSec / 60);
+  if (ageSec < 60) return 'just now';
+  if (ageMin === 1) return '1 min ago';
+  if (ageMin < 60) return `${ageMin} min ago`;
+  const ageHr = Math.floor(ageMin / 60);
+  if (ageHr === 1) return '1 hr ago';
+  return `${ageHr} hr ago`;
+}
+
+if (!cfEnv.LASTFM_API_KEY || !cfEnv.LASTFM_USERNAME || !kv) {
+  hasError = true;
+} else {
+  try {
+    const result = await getCachedNetworkData(kv, cfEnv, period);
+    isStale = result.isStale;
+    fetchedAt = result.fetchedAt;
+
+    const { artists, allTags, allSimilar, influences: influenceLinks } = result.data;
+    const artistNames = artists.map((a) => a.name);
+    const artistSet = new Set(artistNames.map((n) => n.toLowerCase()));
+
+    // --- Build nodes ---
+    const nodes: GraphNode[] = artists.map((a) => ({
+      id: a.id,
+      name: a.name,
+      playcount: a.playcount,
+      url: a.url,
+    }));
+
+    // --- Build edge maps ---
+    // sharedTagsMap: sorted key -> string[]
+    const sharedTagsMap = new Map<string, string[]>();
+    // similarityMap: sorted key -> number
+    const similarityMap = new Map<string, number>();
+    // influenceMap: sorted key -> 'forward' | 'reverse'
+    const influenceMap = new Map<string, 'forward' | 'reverse'>();
+
+    function edgeKey(a: string, b: string): string {
+      return a < b ? `${a}|||${b}` : `${b}|||${a}`;
+    }
+
+    // Edges from shared tags: group artists by tag
+    const tagToArtists = new Map<string, string[]>();
+    artistNames.forEach((name, i) => {
+      const tags = allTags[i] ?? [];
+      tags.forEach((tag) => {
+        if (!tagToArtists.has(tag)) tagToArtists.set(tag, []);
+        tagToArtists.get(tag)!.push(name);
+      });
+    });
+
+    tagToArtists.forEach((artistsWithTag, tag) => {
+      for (let i = 0; i < artistsWithTag.length; i++) {
+        for (let j = i + 1; j < artistsWithTag.length; j++) {
+          const key = edgeKey(artistsWithTag[i], artistsWithTag[j]);
+          if (!sharedTagsMap.has(key)) sharedTagsMap.set(key, []);
+          const existing = sharedTagsMap.get(key)!;
+          if (!existing.includes(tag)) existing.push(tag);
+        }
+      }
+    });
+
+    // Similarity edges: for each artist's similar list, if in our top-100 set
+    artistNames.forEach((name, i) => {
+      const similar = allSimilar[i] ?? [];
+      similar.forEach(({ name: similarName, similarity }) => {
+        if (artistSet.has(similarName.toLowerCase())) {
+          // Find canonical name
+          const canonicalSimilar = artistNames.find(
+            (n) => n.toLowerCase() === similarName.toLowerCase()
+          );
+          if (canonicalSimilar) {
+            const key = edgeKey(name, canonicalSimilar);
+            const existing = similarityMap.get(key) ?? 0;
+            similarityMap.set(key, Math.max(existing, similarity));
+          }
+        }
+      });
+    });
+
+    // Influence edges from Wikidata: case-insensitive match to canonical names
+    const lowerToCanonical = new Map<string, string>();
+    artistNames.forEach((n) => lowerToCanonical.set(n.toLowerCase(), n));
+
+    // === Wikidata influence direction encoding ===
+    // P737 = "influenced by": `from` is the influenced artist, `to` is the influencer.
+    // edgeKey() sorts alphabetically, so the canonical source/target in the serialized link
+    // may not reflect influence flow. influenceDirection encodes this:
+    //   'forward': link.source === canonicalFrom (influenced)  → arrow points: influencer→influenced
+    //              updatePositions swaps x1/y1 to draw from target (influencer) to source (influenced)
+    //   'reverse': link.source === canonicalTo (influencer)    → arrow points: influencer→influenced
+    //              updatePositions uses x1/y1 as-is (source = influencer, target = influenced)
+    influenceLinks.forEach(({ from, to }) => {
+      const canonicalFrom = lowerToCanonical.get(from.toLowerCase());
+      const canonicalTo = lowerToCanonical.get(to.toLowerCase());
+      if (canonicalFrom && canonicalTo) {
+        const key = edgeKey(canonicalFrom, canonicalTo);
+        const direction: 'forward' | 'reverse' =
+          key.startsWith(canonicalFrom + '|||') ? 'forward' : 'reverse';
+        influenceMap.set(key, direction);
+        // Also ensure there's a sharedTags entry so this edge is included
+        if (!sharedTagsMap.has(key)) sharedTagsMap.set(key, []);
+      }
+    });
+
+    // --- Assemble all unique link keys ---
+    const allKeys = new Set<string>([
+      ...sharedTagsMap.keys(),
+      ...similarityMap.keys(),
+      ...influenceMap.keys(),
+    ]);
+
+    const links: GraphLink[] = [];
+    allKeys.forEach((key) => {
+      const [source, target] = key.split('|||');
+      const link: GraphLink = {
+        source,
+        target,
+        sharedTags: sharedTagsMap.get(key) ?? [],
+        similarity: similarityMap.get(key) ?? 0,
+      };
+      const influence = influenceMap.get(key);
+      if (influence) link.influenceDirection = influence;
+      links.push(link);
+    });
+
+    graphData = { nodes, links };
+
+    // Build unique tag list and per-node tag map for client-side filtering
+    uniqueTags = [...new Set(allTags.flat())].sort((a, b) => a.localeCompare(b));
+    artists.forEach((artist, i) => {
+      nodeTagsMap[artist.id] = allTags[i] ?? [];
+    });
+  } catch (err) {
+    console.error('[lab/network] data fetch failed:', err);
+    hasError = true;
+    graphData = { nodes: [], links: [] };
+  }
+}
+
+const periodLabels: Record<string, string> = {
+  '7day': '7d',
+  '1month': '1mo',
+  '3month': '3mo',
+  '6month': '6mo',
+  '12month': '1yr',
+};
+
+const freshnessText = `updated ${formatRelativeAge(fetchedAt)}`;
+const staleAgeText = formatRelativeAge(fetchedAt);
+---
+
+<BaseLayout title="Network" description="A network graph of artists and connections, built with D3." ogTitle="Network">
+  <Fragment slot="head">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&display=swap" />
+  </Fragment>
+  <section class="network container">
+    <h1 class="network__heading">Network.</h1>
+
+    {!hasError && (
+      <p class="network__meta">
+        {graphData.nodes.length} nodes &middot; {graphData.links.length} links &middot; {freshnessText}
+      </p>
+    )}
+
+    {isStale && (
+      <p class="network__stale-banner">
+        Showing cached data from {staleAgeText} — Last.fm is currently unreachable
+      </p>
+    )}
+
+    <nav class="network__periods" aria-label="Time period filter">
+      {VALID_PERIODS.map((p) => (
+        <a
+          href={`?period=${p}`}
+          class={`network__period-btn${p === period ? ' network__period-btn--active' : ''}`}
+        >
+          {periodLabels[p]}
+        </a>
+      ))}
+    </nav>
+
+    <nav class="network__controls" aria-label="Graph controls">
+      <button id="ctrl-genre" class="network__control" aria-pressed="false">genre</button>
+      <button id="ctrl-fullscreen" class="network__control" aria-pressed="false">⤢ fullscreen</button>
+      <input
+        id="ctrl-search"
+        class="network__control network__control--input"
+        type="text"
+        placeholder="search artists"
+        autocomplete="off"
+        aria-label="Search artists by name"
+      />
+      <select id="ctrl-genre-filter" class="network__control" aria-label="Filter by tag">
+        <option value="">all tags</option>
+      </select>
+      <label class="network__control network__control--slider-label" id="ctrl-threshold-label">
+        similarity: 0.0
+        <input
+          id="ctrl-threshold"
+          type="range"
+          min="0" max="1" step="0.1" value="0"
+          aria-label="Similarity threshold"
+          aria-valuetext="0.0"
+        />
+      </label>
+    </nav>
+
+    {hasError ? (
+      <p class="network__error">Network unavailable — check back soon.</p>
+    ) : (
+      <div id="network-container" class="network__canvas">
+        <p class="network__loading">Loading network...</p>
+      </div>
+    )}
+  </section>
+
+  {!hasError && (
+    <script id="graph-data" type="application/json" set:html={JSON.stringify(graphData).replace(/<\//g, '<\\/')} />
+  )}
+
+  {!hasError && (
+    <script id="all-tags-data" type="application/json"
+      set:html={JSON.stringify(uniqueTags).replace(/<\//g, '<\\/')} />
+  )}
+
+  {!hasError && (
+    <script id="node-tags-data" type="application/json"
+      set:html={JSON.stringify(nodeTagsMap).replace(/<\//g, '<\\/')} />
+  )}
+
+  {networkChangelog.length > 0 && (
+    <section class="network__changelog-section container">
+      <details class="network__changelog">
+        <summary class="network__changelog-summary">
+          changelog
+          <span class="network__changelog-count">{networkChangelog.length} {networkChangelog.length === 1 ? 'update' : 'updates'}</span>
+          <span class="network__changelog-arrow" aria-hidden="true">▸</span>
+        </summary>
+        <ol class="network__changelog-list">
+          {networkChangelog.map((entry) => (
+            <li class="network__changelog-entry">
+              <time class="network__changelog-date" datetime={entry.date}>
+                {formatDate(entry.date)}
+              </time>
+              <ul class="network__changelog-items">
+                {entry.items.map((item) => (
+                  <li class="network__changelog-item">
+                    <span class={`network__changelog-label network__changelog-label--${item.label}`}>
+                      {item.label}
+                    </span>
+                    {item.text}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </section>
+  )}
+</BaseLayout>
+
+<style>
+  .network {
+    padding-top: var(--space-2xl);
+    padding-bottom: var(--space-xl);
+  }
+  .network__heading {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-display-large);
+    line-height: var(--lh-display-large);
+    margin-bottom: var(--space-md);
+  }
+  .network__meta {
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    margin-bottom: var(--space-lg);
+  }
+  .network__stale-banner {
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    margin-bottom: var(--space-lg);
+  }
+  .network__periods {
+    display: flex;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-lg);
+  }
+  .network__period-btn {
+    display: inline-block;
+    padding: 4px 12px;
+    border: 1px solid var(--color-border);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    border-radius: 2px;
+  }
+  .network__period-btn--active {
+    border-color: var(--color-on-surface);
+    color: var(--color-on-surface);
+    font-weight: 700;
+  }
+  .network__controls {
+    display: flex;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-lg);
+  }
+  .network__control {
+    display: inline-block;
+    padding: 4px 12px;
+    border: 1px solid var(--color-border);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    border-radius: 2px;
+    background: transparent;
+    cursor: pointer;
+    font-family: var(--font-body);
+  }
+  .network__control[hidden] {
+    display: none;
+  }
+  .network__control--active {
+    background-color: var(--color-on-surface);
+    color: var(--color-surface);
+    border-color: var(--color-on-surface);
+  }
+  .network__control--input {
+    cursor: text;
+  }
+  .network__control--slider-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    cursor: default;
+    font-size: var(--text-body-medium);
+  }
+  .network__control--slider-label input[type="range"] {
+    width: 80px;
+    cursor: pointer;
+  }
+  .network__error {
+    color: var(--color-on-surface-dimmed);
+    font-size: var(--text-body-medium);
+  }
+  .network__canvas {
+    width: 100%;
+    min-height: 600px;
+    position: relative;
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+  }
+  .network__canvas svg {
+    display: block;
+    overflow: hidden;
+    /* Required for d3.zoom to capture touch pan/pinch on mobile.
+       Without this the browser claims the gesture for page scroll. */
+    touch-action: none;
+  }
+  .network__loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+
+  /* ── Changelog ── */
+  .network__changelog-section {
+    padding-bottom: var(--space-xl);
+  }
+  .network__changelog {
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-md);
+    margin-top: var(--space-lg);
+  }
+  .network__changelog-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    list-style: none;
+    cursor: pointer;
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    user-select: none;
+  }
+  .network__changelog-summary::-webkit-details-marker {
+    display: none;
+  }
+  .network__changelog-arrow {
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-muted);
+    transition: transform 150ms ease;
+    display: inline-block;
+  }
+  details[open] .network__changelog-arrow {
+    transform: rotate(90deg);
+  }
+  .network__changelog-count {
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-muted);
+  }
+  .network__changelog-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-md) 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+  }
+  .network__changelog-entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+  .network__changelog-date {
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+  .network__changelog-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+  .network__changelog-item {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface);
+  }
+  .network__changelog-label {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .network__changelog-label--feature {
+    color: #166534;
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+  }
+  .network__changelog-label--bugfix {
+    color: #991b1b;
+    background: #fff1f2;
+    border-color: #fecdd3;
+  }
+  .network__changelog-label--improvement {
+    color: #1e40af;
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
+  :root[data-theme="dark"] .network__changelog-label--feature {
+    color: #86efac;
+    background: rgba(22, 101, 52, 0.3);
+    border-color: rgba(22, 101, 52, 0.5);
+  }
+  :root[data-theme="dark"] .network__changelog-label--bugfix {
+    color: #fca5a5;
+    background: rgba(153, 27, 27, 0.3);
+    border-color: rgba(153, 27, 27, 0.5);
+  }
+  :root[data-theme="dark"] .network__changelog-label--improvement {
+    color: #93c5fd;
+    background: rgba(30, 64, 175, 0.3);
+    border-color: rgba(30, 64, 175, 0.5);
+  }
+
+  /* ── Mobile ── */
+  @media (max-width: 480px) {
+    .network__periods {
+      flex-wrap: wrap;
+    }
+    .network__controls {
+      flex-wrap: wrap;
+    }
+    .network__control--slider-label {
+      width: 100%;
+    }
+  }
+</style>
+
+<script>
+  import * as d3 from 'd3';
+
+  function initNetwork() {
+    const scriptTag = document.getElementById('graph-data');
+    if (!scriptTag) {
+      // No data — page is in error state, nothing to render
+      document.querySelector('.network__loading')?.remove();
+      const canvas = document.getElementById('network-container');
+      if (canvas) canvas.style.display = 'none';
+      return;
+    }
+
+    const graphData = JSON.parse(scriptTag.textContent ?? '{"nodes":[],"links":[]}') as {
+      nodes: Array<{ id: string; name: string; playcount: number; url: string }>;
+      links: Array<{ source: string; target: string; sharedTags: string[]; similarity: number; influenceDirection?: string }>;
+    };
+
+    const tagsScriptTag = document.getElementById('all-tags-data');
+    const allTags: string[] = tagsScriptTag
+      ? (JSON.parse(tagsScriptTag.textContent ?? '[]') as string[])
+      : [];
+
+    const nodeTagsScript = document.getElementById('node-tags-data');
+    const nodeTagsRaw: Record<string, string[]> = nodeTagsScript
+      ? (JSON.parse(nodeTagsScript.textContent ?? '{}') as Record<string, string[]>)
+      : {};
+
+    const container = document.getElementById('network-container');
+    if (!container) return;
+
+    // Remove loading message once we start rendering
+    container.querySelector('.network__loading')?.remove();
+
+    const width = container.clientWidth || 800;
+    const height = Math.max(600, Math.floor(window.innerHeight * 0.72));
+
+    // Node radius: square-root scale so area is proportional to play count
+    const maxPlaycount = d3.max(graphData.nodes, (d) => d.playcount) ?? 1;
+    const radiusScale = d3.scaleSqrt().domain([0, maxPlaycount]).range([3, 22]);
+
+    // XSS prevention: escape artist names and tags before inserting into tooltip HTML
+    function escapeHtml(str: string): string {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    const svg = d3
+      .select(container)
+      .append('svg')
+      .attr('width', width)
+      .attr('height', height)
+      .attr('aria-hidden', 'true')
+      .attr('overflow', 'hidden')
+      .style('overflow', 'hidden')
+      .style('display', 'block');
+
+    // Zoom layer
+    const g = svg.append('g');
+    const zoomBehavior = d3
+      .zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 4])
+      .on('zoom', (event) => g.attr('transform', event.transform));
+    svg.call(zoomBehavior).on('dblclick.zoom', null);
+
+    // Arrowhead marker for influence edges (VIS-01)
+    // markerUnits=userSpaceOnUse prevents scaling by stroke-width (which is 1px — would make marker invisible)
+    svg.append('defs')
+      .append('marker')
+      .attr('id', 'arrowhead')
+      .attr('markerWidth', 6)
+      .attr('markerHeight', 6)
+      .attr('refX', 5)
+      .attr('refY', 3)
+      .attr('orient', 'auto')
+      .attr('markerUnits', 'userSpaceOnUse')
+      .append('polygon')
+      .attr('points', '0 0, 6 3, 0 6')
+      .attr('fill', 'var(--color-border)');
+
+    // Deep-copy nodes and links so D3 can mutate them safely.
+    // Scatter the initial positions across a virtual canvas much larger
+    // than the viewport so the graph starts out genuinely pannable rather
+    // than all packed into the visible box. Use an absolute minimum so
+    // mobile (where width can be ~375px) still gets a wide scatter.
+    const spreadW = Math.max(width * 3, 1800);
+    const spreadH = Math.max(height * 3, 1800);
+    const nodes = graphData.nodes.map((n) => ({
+      ...n,
+      x: (Math.random() - 0.5) * spreadW + width / 2,
+      y: (Math.random() - 0.5) * spreadH + height / 2,
+    }));
+    const links = graphData.links.map((l) => ({ ...l }));
+
+    // --- Node tag set (for genre/tag filtering) ---
+    const nodeTagSet = new Map<string, Set<string>>();
+    nodes.forEach((n) => {
+      const tags = nodeTagsRaw[n.id] ?? [];
+      nodeTagSet.set(n.id, new Set(tags));
+    });
+
+    // --- State ---
+    const state = {
+      groupByGenre: false,
+      fullscreen: false,
+      searchTerm: '',
+      selectedTag: '',
+      similarityThreshold: 0,
+    };
+
+    const btnGenre = document.getElementById('ctrl-genre') as HTMLButtonElement | null;
+    const btnFullscreen = document.getElementById('ctrl-fullscreen') as HTMLButtonElement | null;
+
+    // MOB-03: Hide fullscreen button when Fullscreen API is not supported (e.g. iOS Safari)
+    if (btnFullscreen && !document.fullscreenEnabled) {
+      btnFullscreen.hidden = true;
+    }
+
+    // --- Genre assignment ---
+    // Use graphData.links (source/target still strings) for genre lookup
+    const nodeGenre = new Map<string, string>();
+    const nodeGenre2 = new Map<string, string>();
+    nodes.forEach((n) => nodeGenre.set(n.id, 'other'));
+    graphData.links.forEach((l) => {
+      const tag = l.sharedTags[0];
+      if (tag) {
+        if (nodeGenre.get(l.source) === 'other') nodeGenre.set(l.source, tag);
+        else if (!nodeGenre2.has(l.source) && nodeGenre.get(l.source) !== tag) nodeGenre2.set(l.source, tag);
+        if (nodeGenre.get(l.target) === 'other') nodeGenre.set(l.target, tag);
+        else if (!nodeGenre2.has(l.target) && nodeGenre.get(l.target) !== tag) nodeGenre2.set(l.target, tag);
+      }
+    });
+
+    // --- Genre nodes and links ---
+    const genres = Array.from(new Set(nodeGenre.values()));
+    const poleRadius = Math.min(width, height) * 0.35;
+    const cx = width / 2;
+    const cy = height / 2;
+
+    // Radius sized to contain the genre label (10px font, ~6px/char)
+    const genreNodeRadius = (name: string) => Math.max(24, Math.round(name.length * 3.2 + 8));
+
+    type GenreNodeDatum = {
+      id: string;
+      name: string;
+      type: 'genre';
+      radius: number;
+      x: number;
+      y: number;
+      fx: number | null;
+      fy: number | null;
+    } & d3.SimulationNodeDatum;
+
+    const genreNodes: GenreNodeDatum[] = genres.map((genre, i) => {
+      const angle = (2 * Math.PI * i) / genres.length;
+      return {
+        id: `genre::${genre}`,
+        name: genre,
+        type: 'genre' as const,
+        radius: genreNodeRadius(genre),
+        x: cx + poleRadius * Math.cos(angle),
+        y: cy + poleRadius * Math.sin(angle),
+        fx: null,
+        fy: null,
+      };
+    });
+
+    const genreLinks = nodes.map((n) => ({
+      source: n.id,
+      target: `genre::${nodeGenre.get(n.id) ?? 'other'}`,
+      type: 'genre' as const,
+    }));
+
+    // Secondary genre links — only include entries where the secondary genre
+    // is also a primary genre for some node (i.e. exists in genreNodes).
+    const validGenreIds = new Set(genres);
+    const genreLinks2 = nodes
+      .filter((n) => {
+        const g2 = nodeGenre2.get(n.id);
+        return g2 !== undefined && validGenreIds.has(g2);
+      })
+      .map((n) => ({
+        source: n.id,
+        target: `genre::${nodeGenre2.get(n.id)!}`,
+        type: 'genre2' as const,
+      }));
+
+    // Force simulation
+    const simulation = d3
+      .forceSimulation(nodes as d3.SimulationNodeDatum[])
+      .force(
+        'link',
+        d3
+          .forceLink(links)
+          .id((d) => (d as { id: string }).id)
+          .distance((d) => {
+            const sim = (d as { similarity?: number }).similarity ?? 0;
+            return sim > 0 ? 30 + (1 - sim) * 160 : 200;
+          })
+          .strength((d) => {
+            const sim = (d as { similarity?: number }).similarity ?? 0;
+            return sim > 0 ? sim * 0.6 : 0.05;
+          })
+      )
+      .force('charge', d3.forceManyBody().strength(-400).distanceMax(1200))
+      // Very weak gravity toward the canvas center — just enough to prevent
+      // the graph from drifting away forever, but soft enough that nodes
+      // genuinely live outside the viewport on first load.
+      .force('x', d3.forceX(width / 2).strength(0.012))
+      .force('y', d3.forceY(height / 2).strength(0.012))
+      .force(
+        'collision',
+        d3.forceCollide().radius((d) => {
+          const n = d as { playcount?: number; type?: string; radius?: number };
+          if (n.type === 'genre') return (n.radius ?? 24) + 3;
+          return radiusScale(n.playcount ?? 0) + 3;
+        })
+      );
+
+    // Pre-run the simulation synchronously so the layout has already
+    // stabilized before the first paint. This lets us compute a real
+    // bounding box and zoom-to-fit below — without this, we'd be
+    // rendering during a still-converging layout and the graph would
+    // look confined to the viewport.
+    simulation.stop();
+    for (let i = 0; i < 300; i++) simulation.tick();
+
+    // Links
+    const link = g
+      .append('g')
+      .attr('stroke', 'var(--color-border)')
+      .attr('stroke-opacity', 0.5)
+      .selectAll('line')
+      .data(links)
+      .join('line')
+      .attr('stroke-width', 1)
+      .attr('marker-end', (d: any) => {
+        const ld = d as { influenceDirection?: string };
+        return ld.influenceDirection ? 'url(#arrowhead)' : null;
+      });
+
+    // Hit-area lines for edge hover detection (transparent wide stroke)
+    const linkHit = g.append('g')
+      .selectAll<SVGLineElement, typeof links[0]>('line')
+      .data(links)
+      .join('line')
+      .attr('stroke', 'transparent')
+      .attr('stroke-width', 8)
+      .attr('cursor', 'pointer')
+      .style('pointer-events', 'stroke');
+
+    // Genre links (hidden until genre toggle is ON)
+    const genreLinkGroup = g.append('g')
+      .attr('stroke', 'var(--color-border)')
+      .attr('stroke-opacity', 0.3)
+      .style('display', 'none');
+    const genreLinkSel = genreLinkGroup
+      .selectAll<SVGLineElement, typeof genreLinks[0]>('line')
+      .data(genreLinks)
+      .join('line')
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '3,3');
+
+    // Secondary genre links (hidden until genre toggle is ON)
+    const genreLink2Group = g.append('g')
+      .attr('stroke', 'var(--color-border)')
+      .attr('stroke-opacity', 0.15)
+      .style('display', 'none');
+    const genreLink2Sel = genreLink2Group
+      .selectAll<SVGLineElement, typeof genreLinks2[0]>('line')
+      .data(genreLinks2)
+      .join('line')
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '6,4');
+
+    // Nodes
+    type NodeDatum = typeof nodes[0] & d3.SimulationNodeDatum;
+    const node = g
+      .append('g')
+      .selectAll<SVGCircleElement, NodeDatum>('circle')
+      .data(nodes as NodeDatum[])
+      .join('circle')
+      .attr('r', (d) => radiusScale(d.playcount))
+      .attr('fill', 'var(--color-on-surface)')
+      .attr('fill-opacity', 0.75)
+      .attr('pointer-events', 'none');
+
+    // Labels
+    const label = g
+      .append('g')
+      .selectAll<SVGTextElement, NodeDatum>('text')
+      .data(nodes as NodeDatum[])
+      .join('text')
+      .text((d) => d.name)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '9px')
+      .attr('fill', 'var(--color-on-surface)')
+      .attr('fill-opacity', 0.7)
+      .attr('pointer-events', 'none')
+      .attr('user-select', 'none');
+
+    const MIN_TOUCH_RADIUS = 22; // 44px diameter — WCAG 2.5.5
+
+    // Hit-area circles for 44px touch targets (MOB-04).
+    // Rendered above visible nodes and labels so they capture all pointer events.
+    const hitArea = g
+      .append('g')
+      .attr('class', 'network__hit-area')
+      .selectAll<SVGCircleElement, NodeDatum>('circle')
+      .data(nodes as NodeDatum[])
+      .join('circle')
+      .attr('r', (d) => Math.max(MIN_TOUCH_RADIUS, radiusScale(d.playcount)))
+      .attr('fill', 'transparent')
+      .attr('cursor', 'pointer')
+      .attr('pointer-events', 'all');
+
+    // Tracks whether each in-progress drag has crossed the movement threshold
+    // and reheated the simulation. Prevents pointer jitter on click-and-hold
+    // from triggering alphaTarget(0.3) and letting charge force repel nodes.
+    // (Originally fixed in 055b462; reverted by the free-flowing layout rewrite.)
+    const nodeDragReheated = new Map<NodeDatum, boolean>();
+
+    hitArea.call(
+      d3
+        .drag<SVGCircleElement, NodeDatum>()
+        .on('start', (_event, d) => {
+          // Pin in place; do NOT reheat on press — reheating here repels
+          // other nodes via the charge force.
+          d.fx = d.x;
+          d.fy = d.y;
+          nodeDragReheated.set(d, false);
+        })
+        .on('drag', (event, d) => {
+          if (!nodeDragReheated.get(d)) {
+            const dx = event.x - (d.fx ?? event.x);
+            const dy = event.y - (d.fy ?? event.y);
+            if (dx * dx + dy * dy < 16) return; // < 4px — jitter, don't reheat
+            nodeDragReheated.set(d, true);
+            simulation.alphaTarget(0.3).restart();
+          }
+          d.fx = event.x;
+          d.fy = event.y;
+        })
+        .on('end', (event, d) => {
+          nodeDragReheated.delete(d);
+          if (!event.active) simulation.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        })
+    );
+
+    // --- Filter opacity constants ---
+    const GHOST_OPACITY = 0.08;
+    const EDGE_GHOST_OPACITY = 0.05;
+    const FULL_NODE_OPACITY = 0.75;
+    const FULL_LABEL_OPACITY = 0.70;
+    const FULL_EDGE_OPACITY = 0.50;
+
+    function applyFilters() {
+      const { searchTerm, selectedTag, similarityThreshold } = state;
+
+      // 1. Compute which links are below the similarity threshold
+      const hiddenLinkIndices = new Set<number>();
+      links.forEach((l, i) => {
+        const sim = (l as { similarity?: number }).similarity ?? 0;
+        if (sim < similarityThreshold) {
+          hiddenLinkIndices.add(i);
+        }
+      });
+
+      // 2. Compute connected nodes (only relevant when threshold > 0)
+      const connectedNodeIds = new Set<string>();
+      if (similarityThreshold > 0) {
+        links.forEach((l, i) => {
+          if (!hiddenLinkIndices.has(i)) {
+            const src = typeof l.source === 'object'
+              ? (l.source as { id: string }).id : l.source as string;
+            const tgt = typeof l.target === 'object'
+              ? (l.target as { id: string }).id : l.target as string;
+            connectedNodeIds.add(src);
+            connectedNodeIds.add(tgt);
+          }
+        });
+      }
+
+      // 3. Determine ghosted nodes (fail ANY filter = ghosted)
+      const ghostedNodes = new Set<string>();
+      nodes.forEach((n) => {
+        const nameMatch = searchTerm === ''
+          || n.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const tagMatch = selectedTag === ''
+          || (nodeTagSet.get(n.id) ?? new Set()).has(selectedTag);
+        const thresholdMatch = similarityThreshold === 0
+          || connectedNodeIds.has(n.id);
+        if (!nameMatch || !tagMatch || !thresholdMatch) {
+          ghostedNodes.add(n.id);
+        }
+      });
+
+      // 4. Apply opacity to nodes and labels
+      node.transition().duration(150).attr('fill-opacity', (d: any) =>
+        ghostedNodes.has(d.id) ? GHOST_OPACITY : FULL_NODE_OPACITY
+      );
+      label.transition().duration(150).attr('fill-opacity', (d: any) =>
+        ghostedNodes.has(d.id) ? GHOST_OPACITY : FULL_LABEL_OPACITY
+      );
+
+      // 5. Apply opacity to edges
+      link.transition().duration(150).attr('stroke-opacity', (l: any) => {
+        const src = typeof l.source === 'object'
+          ? (l.source as { id: string }).id : l.source as string;
+        const tgt = typeof l.target === 'object'
+          ? (l.target as { id: string }).id : l.target as string;
+        const sim = (l as { similarity?: number }).similarity ?? 0;
+        if ((similarityThreshold > 0 && sim < similarityThreshold)
+            || ghostedNodes.has(src)
+            || ghostedNodes.has(tgt)) {
+          return EDGE_GHOST_OPACITY;
+        }
+        return FULL_EDGE_OPACITY;
+      });
+
+      // Sync arrowhead visibility with edge ghost state (VIS-01, Pitfall 3)
+      // SVG markers do not inherit stroke-opacity — must toggle marker-end to null explicitly
+      link.attr('marker-end', (l: any) => {
+        const ld = l as { influenceDirection?: string };
+        if (!ld.influenceDirection) return null;
+        const src = typeof l.source === 'object'
+          ? (l.source as { id: string }).id : l.source as string;
+        const tgt = typeof l.target === 'object'
+          ? (l.target as { id: string }).id : l.target as string;
+        const sim = (l as { similarity?: number }).similarity ?? 0;
+        const ghosted = (similarityThreshold > 0 && sim < similarityThreshold)
+          || ghostedNodes.has(src) || ghostedNodes.has(tgt);
+        return ghosted ? null : 'url(#arrowhead)';
+      });
+    }
+
+    // Genre nodes (hidden until genre toggle is ON)
+    const genreDragReheated = new Map<GenreNodeDatum, boolean>();
+    const genreNodeGroup = g.append('g').style('display', 'none');
+
+    const genreNodeCircle = genreNodeGroup
+      .selectAll<SVGCircleElement, GenreNodeDatum>('circle')
+      .data(genreNodes)
+      .join('circle')
+      .attr('r', (d) => d.radius)
+      .attr('fill', 'none')
+      .attr('stroke', 'var(--color-on-surface)')
+      .attr('stroke-width', 1)
+      .attr('cursor', 'pointer')
+      .attr('pointer-events', 'all')
+      .call(
+        d3.drag<SVGCircleElement, GenreNodeDatum>()
+          .on('start', (_event, d) => {
+            // Pin in place without reheating — see artist drag handler for rationale.
+            d.fx = d.x;
+            d.fy = d.y;
+            genreDragReheated.set(d, false);
+          })
+          .on('drag', (event, d) => {
+            if (!genreDragReheated.get(d)) {
+              const dx = event.x - (d.fx ?? event.x);
+              const dy = event.y - (d.fy ?? event.y);
+              if (dx * dx + dy * dy < 16) return;
+              genreDragReheated.set(d, true);
+              simulation.alphaTarget(0.3).restart();
+            }
+            d.fx = event.x;
+            d.fy = event.y;
+          })
+          .on('end', (event, d) => {
+            genreDragReheated.delete(d);
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+          })
+      );
+
+    const genreNodeLabel = genreNodeGroup
+      .selectAll<SVGTextElement, GenreNodeDatum>('text')
+      .data(genreNodes)
+      .join('text')
+      .attr('class', 'network__genre-label')
+      .text((d) => d.name)
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'middle')
+      .attr('font-size', '10px')
+      .attr('fill', 'var(--color-on-surface)')
+      .attr('pointer-events', 'none')
+      .attr('user-select', 'none');
+
+    // --- Genre toggle function ---
+    function toggleGenre(on: boolean) {
+      if (on) {
+        // Add genre nodes to simulation
+        simulation.nodes([...(nodes as d3.SimulationNodeDatum[]), ...genreNodes]);
+        // Replace link force with combined artist + genre links
+        simulation.force(
+          'link',
+          d3.forceLink([...links, ...genreLinks, ...genreLinks2])
+            .id((d) => (d as { id: string }).id)
+            .distance((d) => {
+              const t = (d as { type?: string }).type;
+              if (t === 'genre') return 80;
+              if (t === 'genre2') return 140;
+              const sim = (d as { similarity?: number }).similarity ?? 0;
+              return sim > 0 ? 30 + (1 - sim) * 160 : 200;
+            })
+            .strength((d) => {
+              const t = (d as { type?: string }).type;
+              if (t === 'genre') return 0.3;
+              if (t === 'genre2') return 0.08;
+              const sim = (d as { similarity?: number }).similarity ?? 0;
+              return sim > 0 ? sim * 0.6 : 0.05;
+            })
+        );
+        genreLinkGroup.style('display', '');
+        genreLink2Group.style('display', '');
+        genreNodeGroup.style('display', '');
+      } else {
+        // Reset genre nodes to pole positions for next time
+        genres.forEach((genre, i) => {
+          const angle = (2 * Math.PI * i) / genres.length;
+          const gn = genreNodes[i];
+          gn.x = cx + poleRadius * Math.cos(angle);
+          gn.y = cy + poleRadius * Math.sin(angle);
+          gn.vx = 0;
+          gn.vy = 0;
+          gn.fx = null;
+          gn.fy = null;
+        });
+        // Restore artist-only nodes
+        simulation.nodes(nodes as d3.SimulationNodeDatum[]);
+        // Restore similarity-driven link force
+        simulation.force(
+          'link',
+          d3.forceLink(links)
+            .id((d) => (d as { id: string }).id)
+            .distance((d) => {
+              const sim = (d as { similarity?: number }).similarity ?? 0;
+              return sim > 0 ? 30 + (1 - sim) * 160 : 200;
+            })
+            .strength((d) => {
+              const sim = (d as { similarity?: number }).similarity ?? 0;
+              return sim > 0 ? sim * 0.6 : 0.05;
+            })
+        );
+        genreLinkGroup.style('display', 'none');
+        genreLink2Group.style('display', 'none');
+        genreNodeGroup.style('display', 'none');
+      }
+      simulation.alpha(0.3).alphaTarget(0).restart();
+    }
+
+    // Tooltip
+    const tooltip = d3
+      .select(container)
+      .append('div')
+      .style('position', 'absolute')
+      .style('background', 'var(--color-surface)')
+      .style('border', '1px solid var(--color-border)')
+      .style('padding', '8px 12px')
+      .style('font-size', 'var(--text-body-medium)')
+      .style('pointer-events', 'none')
+      .style('opacity', '0')
+      .style('transition', 'opacity 0.15s')
+      .style('max-width', '200px')
+      .style('z-index', '10');
+
+    // Edge tooltip timer
+    let edgeTooltipTimer: ReturnType<typeof setTimeout> | null = null;
+
+    hitArea
+      .on('mouseenter', (event: MouseEvent, d: NodeDatum) => {
+        // Cancel any pending edge tooltip when entering a node
+        if (edgeTooltipTimer) { clearTimeout(edgeTooltipTimer); edgeTooltipTimer = null; }
+        tooltip.style('transition', 'opacity 0.15s').html(`<strong>${escapeHtml(d.name)}</strong>`).style('opacity', '1');
+        const rect = container.getBoundingClientRect();
+        tooltip
+          .style('left', `${event.clientX - rect.left + 14}px`)
+          .style('top', `${Math.max(8, event.clientY - rect.top - 36)}px`);
+      })
+      .on('mousemove', (event: MouseEvent) => {
+        const rect = container.getBoundingClientRect();
+        tooltip
+          .style('left', `${event.clientX - rect.left + 14}px`)
+          .style('top', `${Math.max(8, event.clientY - rect.top - 36)}px`);
+      })
+      .on('mouseleave', () => tooltip.style('opacity', '0'))
+      .on('click', (_event: MouseEvent, d: NodeDatum) => {
+        try {
+          const parsed = new URL(d.url);
+          if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+            window.open(d.url, '_blank', 'noopener,noreferrer');
+          }
+        } catch {
+          // invalid URL — silently ignore
+        }
+      });
+
+    // Edge tooltip: 200ms delay, immediate dismiss
+    linkHit
+      .on('mouseenter', (event: MouseEvent, d: any) => {
+        edgeTooltipTimer = setTimeout(() => {
+          // Extend cast to include influenceDirection (VIS-02)
+          const ld = d as { influenceDirection?: string; sharedTags?: string[]; similarity?: number };
+          const src = (d.source as { name?: string }).name ?? '';
+          const tgt = (d.target as { name?: string }).name ?? '';
+          let html = '';
+
+          // Direction line for influence edges (D-04, D-06)
+          // See the authoritative encoding comment above influenceLinks.forEach.
+          if (ld.influenceDirection === 'forward') {
+            html += `<div>${escapeHtml(tgt)} → ${escapeHtml(src)}</div>`;
+          } else if (ld.influenceDirection === 'reverse') {
+            html += `<div>${escapeHtml(src)} → ${escapeHtml(tgt)}</div>`;
+          }
+          // No direction line for similarity-only edges (D-05)
+
+          // Shared tags line (omit if empty)
+          const tags = (ld.sharedTags ?? []).map((t: string) => escapeHtml(t)).join(', ');
+          if (tags) html += `<div>${tags}</div>`;
+
+          // Similarity score (always shown)
+          html += `<div>similarity: ${(ld.similarity ?? 0).toFixed(2)}</div>`;
+
+          tooltip.style('transition', 'opacity 0.15s').html(html).style('opacity', '1');
+          const rect = container.getBoundingClientRect();
+          tooltip
+            .style('left', `${event.clientX - rect.left + 14}px`)
+            .style('top', `${Math.max(8, event.clientY - rect.top - 36)}px`);
+        }, 200);
+      })
+      .on('mousemove', (event: MouseEvent) => {
+        const rect = container.getBoundingClientRect();
+        tooltip
+          .style('left', `${event.clientX - rect.left + 14}px`)
+          .style('top', `${Math.max(8, event.clientY - rect.top - 36)}px`);
+      })
+      .on('mouseleave', () => {
+        if (edgeTooltipTimer) { clearTimeout(edgeTooltipTimer); edgeTooltipTimer = null; }
+        // D-08: immediate dismiss — override transition
+        tooltip.style('transition', 'none').style('opacity', '0');
+      });
+
+    // Tick: pull fresh positions out of the simulation state into the DOM.
+    // Extracted so we can also invoke it manually after pre-settling the
+    // layout (simulation.tick() advances state but does not fire 'tick').
+    type SimLink = { source: d3.SimulationNodeDatum; target: d3.SimulationNodeDatum };
+    function updatePositions() {
+      link
+        .attr('x1', (d: any) => {
+          const s = (d as unknown as SimLink).source;
+          const t = (d as unknown as SimLink).target;
+          const ld = d as { influenceDirection?: string };
+          // 'forward': swap — draw from target (influencer) toward source (influenced)
+          if (ld.influenceDirection === 'forward') return (t as any).x ?? 0;
+          return (s as any).x ?? 0;
+        })
+        .attr('y1', (d: any) => {
+          const s = (d as unknown as SimLink).source;
+          const t = (d as unknown as SimLink).target;
+          const ld = d as { influenceDirection?: string };
+          if (ld.influenceDirection === 'forward') return (t as any).y ?? 0;
+          return (s as any).y ?? 0;
+        })
+        .attr('x2', (d: any) => {
+          const s = (d as unknown as SimLink).source;
+          const t = (d as unknown as SimLink).target;
+          const ld = d as { influenceDirection?: string };
+          // Determine visual endpoint (influenced artist)
+          const visualEnd = ld.influenceDirection === 'forward' ? s : t;
+          const visualStart = ld.influenceDirection === 'forward' ? t : s;
+          if (!ld.influenceDirection) return (t as any).x ?? 0; // non-influence: raw
+          const ex = (visualEnd as any).x ?? 0, ey = (visualEnd as any).y ?? 0;
+          const ox = (visualStart as any).x ?? 0, oy = (visualStart as any).y ?? 0;
+          const dx = ex - ox, dy = ey - oy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist === 0) return ex;
+          const retract = radiusScale((visualEnd as any).playcount ?? 0) + 5;
+          return ex - (dx / dist) * retract;
+        })
+        .attr('y2', (d: any) => {
+          const s = (d as unknown as SimLink).source;
+          const t = (d as unknown as SimLink).target;
+          const ld = d as { influenceDirection?: string };
+          const visualEnd = ld.influenceDirection === 'forward' ? s : t;
+          const visualStart = ld.influenceDirection === 'forward' ? t : s;
+          if (!ld.influenceDirection) return (t as any).y ?? 0;
+          const ex = (visualEnd as any).x ?? 0, ey = (visualEnd as any).y ?? 0;
+          const ox = (visualStart as any).x ?? 0, oy = (visualStart as any).y ?? 0;
+          const dx = ex - ox, dy = ey - oy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist === 0) return ey;
+          const retract = radiusScale((visualEnd as any).playcount ?? 0) + 5;
+          return ey - (dy / dist) * retract;
+        });
+
+      linkHit
+        .attr('x1', (d: any) => ((d as unknown as SimLink).source.x ?? 0))
+        .attr('y1', (d: any) => ((d as unknown as SimLink).source.y ?? 0))
+        .attr('x2', (d: any) => ((d as unknown as SimLink).target.x ?? 0))
+        .attr('y2', (d: any) => ((d as unknown as SimLink).target.y ?? 0));
+
+      node
+        .attr('cx', (d) => (d as d3.SimulationNodeDatum).x ?? 0)
+        .attr('cy', (d) => (d as d3.SimulationNodeDatum).y ?? 0);
+
+      hitArea
+        .attr('cx', (d) => (d as d3.SimulationNodeDatum).x ?? 0)
+        .attr('cy', (d) => (d as d3.SimulationNodeDatum).y ?? 0);
+
+      label
+        .attr('x', (d) => (d as d3.SimulationNodeDatum).x ?? 0)
+        .attr('y', (d) => ((d as d3.SimulationNodeDatum).y ?? 0) + radiusScale(d.playcount) + 11);
+
+      if (state.groupByGenre) {
+        genreLinkSel
+          .attr('x1', (d) => ((d as unknown as SimLink).source.x ?? 0))
+          .attr('y1', (d) => ((d as unknown as SimLink).source.y ?? 0))
+          .attr('x2', (d) => ((d as unknown as SimLink).target.x ?? 0))
+          .attr('y2', (d) => ((d as unknown as SimLink).target.y ?? 0));
+
+        genreLink2Sel
+          .attr('x1', (d) => ((d as unknown as SimLink).source.x ?? 0))
+          .attr('y1', (d) => ((d as unknown as SimLink).source.y ?? 0))
+          .attr('x2', (d) => ((d as unknown as SimLink).target.x ?? 0))
+          .attr('y2', (d) => ((d as unknown as SimLink).target.y ?? 0));
+
+        genreNodeCircle
+          .attr('cx', (d) => d.x ?? 0)
+          .attr('cy', (d) => d.y ?? 0);
+
+        genreNodeLabel
+          .attr('x', (d) => d.x ?? 0)
+          .attr('y', (d) => d.y ?? 0);
+      }
+    }
+    simulation.on('tick', updatePositions);
+
+    // Paint the pre-settled layout immediately.
+    updatePositions();
+
+    // Zoom-to-fit: compute the bounding box of the settled layout and
+    // apply an initial zoom transform so the entire graph is visible on
+    // first paint, regardless of viewport size. This is what actually
+    // lets mobile users see the whole graph without panning first.
+    if (nodes.length === 0) return;
+    {
+      const margin = 40;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      (nodes as d3.SimulationNodeDatum[]).forEach((n) => {
+        const r = radiusScale((n as { playcount?: number }).playcount ?? 0);
+        const nx = n.x ?? 0;
+        const ny = n.y ?? 0;
+        if (nx - r < minX) minX = nx - r;
+        if (nx + r > maxX) maxX = nx + r;
+        if (ny - r < minY) minY = ny - r;
+        if (ny + r > maxY) maxY = ny + r;
+      });
+      const bw = Math.max(maxX - minX + margin * 2, 1);
+      const bh = Math.max(maxY - minY + margin * 2, 1);
+      const fitScale = Math.min(width / bw, height / bh, 1);
+      const clampedScale = Math.max(0.1, fitScale);
+      const bcx = (minX + maxX) / 2;
+      const bcy = (minY + maxY) / 2;
+      const tx = width / 2 - bcx * clampedScale;
+      const ty = height / 2 - bcy * clampedScale;
+      svg.call(
+        zoomBehavior.transform,
+        d3.zoomIdentity.translate(tx, ty).scale(clampedScale)
+      );
+    }
+
+    // --- Fullscreen ---
+    const onFullscreenChange = () => {
+      const isFullscreen = !!document.fullscreenElement;
+      state.fullscreen = isFullscreen;
+
+      const newWidth = isFullscreen ? window.innerWidth : width;
+      const newHeight = isFullscreen ? window.innerHeight : height;
+
+      svg.attr('width', newWidth).attr('height', newHeight);
+      simulation.force('x', d3.forceX(newWidth / 2).strength(0.012));
+      simulation.force('y', d3.forceY(newHeight / 2).strength(0.012));
+      simulation.alpha(0.3).alphaTarget(0).restart();
+
+      if (btnFullscreen) {
+        btnFullscreen.textContent = isFullscreen ? '✕ exit' : '⤢ fullscreen';
+        btnFullscreen.classList.toggle('network__control--active', isFullscreen);
+        btnFullscreen.setAttribute('aria-pressed', String(isFullscreen));
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+
+    // Clean up the fullscreenchange listener on Astro view transitions to prevent
+    // listener stacking when initNetwork() is re-run after navigating away and back.
+    document.addEventListener('astro:before-swap', () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+    }, { once: true });
+
+    btnFullscreen?.addEventListener('click', () => {
+      if (!state.fullscreen) {
+        container.requestFullscreen().catch((err) => {
+          console.warn('[network] requestFullscreen failed:', err);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
+    // --- Genre toggle ---
+    btnGenre?.addEventListener('click', () => {
+      const next = !state.groupByGenre;
+      try {
+        toggleGenre(next);
+        state.groupByGenre = next;
+        btnGenre.classList.toggle('network__control--active', next);
+        btnGenre.setAttribute('aria-pressed', String(next));
+      } catch (err) {
+        console.error('[network] genre toggle failed:', err);
+      }
+    });
+
+    // --- Search filter ---
+    document.getElementById('ctrl-search')?.addEventListener('input', (e) => {
+      state.searchTerm = (e.target as HTMLInputElement).value;
+      applyFilters();
+    });
+
+    // --- Genre/tag filter ---
+    const genreSelect = document.getElementById('ctrl-genre-filter') as HTMLSelectElement | null;
+    if (genreSelect) {
+      allTags.forEach((tag) => {
+        const opt = document.createElement('option');
+        opt.value = tag;
+        opt.textContent = tag;
+        genreSelect.appendChild(opt);
+      });
+      genreSelect.addEventListener('change', (e) => {
+        state.selectedTag = (e.target as HTMLSelectElement).value;
+        applyFilters();
+      });
+    }
+
+    // --- Similarity threshold ---
+    const thresholdInput = document.getElementById('ctrl-threshold') as HTMLInputElement | null;
+    thresholdInput?.addEventListener('input', (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      state.similarityThreshold = val;
+      const lbl = document.getElementById('ctrl-threshold-label');
+      if (lbl && lbl.firstChild) {
+        lbl.firstChild.textContent = `similarity: ${val.toFixed(1)} `;
+      }
+      (e.target as HTMLInputElement).setAttribute('aria-valuetext', val.toFixed(1));
+      applyFilters();
+    });
+  }
+
+  initNetwork();
+</script>

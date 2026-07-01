@@ -1,0 +1,89 @@
+---
+// src/pages/lab/index.astro
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+const experiments = [
+  {
+    slug: 'chart',
+    title: 'Chart',
+    description: 'Weekly top albums from Last.fm',
+  },
+  {
+    slug: 'network',
+    title: 'Network',
+    description: 'Artist connections by shared tags and influence',
+  },
+];
+---
+
+<BaseLayout title="Lab" description="Design experiments and data visualizations from Studio Cartelli." ogTitle="Lab">
+  <section class="experiments container">
+    <h1 class="experiments__heading">lab.</h1>
+    <p class="experiments__intro">
+      A home for small, self-contained side projects.
+    </p>
+    <ul class="experiments__list" role="list">
+      {experiments.map((item) => (
+        <li class="experiments__item">
+          <a href={`/lab/${item.slug}`} class="experiments__link">
+            <span class="experiments__name">{item.title}</span>
+            <span class="experiments__desc">{item.description}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+</BaseLayout>
+
+<style>
+  .experiments {
+    padding-top: var(--space-2xl);
+    padding-bottom: var(--space-xl);
+  }
+
+  .experiments__heading {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-display-large);
+    line-height: var(--lh-display-large);
+    margin-bottom: var(--space-md);
+  }
+
+  .experiments__intro {
+    font-family: var(--font-body);
+    font-size: var(--text-body-large);
+    color: var(--color-on-surface-dimmed);
+    line-height: var(--lh-body-large);
+    margin-bottom: var(--space-lg);
+    max-width: 640px;
+  }
+
+  .experiments__list {
+    list-style: none;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .experiments__item {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .experiments__link {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    padding-block: var(--space-md);
+    color: inherit;
+  }
+
+  .experiments__name {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: var(--text-body-large);
+  }
+
+  .experiments__desc {
+    font-size: var(--text-body-medium);
+    line-height: var(--lh-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+</style>

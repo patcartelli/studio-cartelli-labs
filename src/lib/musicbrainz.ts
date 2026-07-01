@@ -1,5 +1,5 @@
 // src/lib/musicbrainz.ts
-// Raw MusicBrainz API client for the /experiments/chart page.
+// Raw MusicBrainz API client for the /lab/chart page.
 // Server-only: no KV dependency. Do not import from client code.
 
 import { getWikidataArtistImageUrl } from './wikidata';

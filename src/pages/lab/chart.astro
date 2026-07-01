@@ -1,0 +1,2893 @@
+---
+// src/pages/lab/chart.astro
+// SSR: fetches live data from Last.fm on every request.
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCachedTopAlbums, getCachedTopArtists, getCachedTopTracks } from '../../lib/lastfm-cache';
+import type { Album, Artist, Track } from '../../lib/lastfm';
+import { env } from 'cloudflare:workers';
+const _env = env as unknown as { LASTFM_CHART_CACHE: KVNamespace };
+const kv = _env.LASTFM_CHART_CACHE;
+import { changelog } from '../../data/changelog';
+
+const chartChangelog = changelog.filter((e) => e.project === 'chart');
+
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if (!m) return y;
+  if (!d) return `${months[Number(m) - 1]} ${y}`;
+  return `${months[Number(m) - 1]} ${Number(d)}, ${y}`;
+}
+
+function formatPlays(n: number): string {
+  if (n >= 999_950) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function formatPlaysLong(n: number): string {
+  return new Intl.NumberFormat('en-US').format(n);
+}
+
+let albums: Album[] = [];
+let artists: Artist[] = [];
+let tracks: Track[] = [];
+let hasError = false;
+let fetchedAt: number = Date.now();
+
+try {
+  const [albumsResult, artistsResult, tracksResult] = await Promise.all([
+    getCachedTopAlbums(kv, env, 20),
+    getCachedTopArtists(kv, env, 20, '7day'),
+    getCachedTopTracks(kv, env, 20),
+  ]);
+  albums = albumsResult.data;
+  artists = artistsResult.data;
+  tracks = tracksResult.data;
+  fetchedAt = albumsResult.fetchedAt;
+} catch (err) {
+  console.error('[lab/chart] data fetch failed:', err);
+  hasError = true;
+}
+
+// Build artist → imageUrl lookup from top albums (first/highest-ranked album per artist wins)
+const albumArtByArtist = new Map<string, string>();
+for (const album of albums) {
+  if (album.imageUrl && !albumArtByArtist.has(album.artist.toLowerCase())) {
+    albumArtByArtist.set(album.artist.toLowerCase(), album.imageUrl);
+  }
+}
+
+// Fill missing track thumbnails from album art
+// Last.fm returns a placeholder for tracks with no art — treat it as empty
+const LASTFM_PLACEHOLDER = '2a96cbd8b46e442fc41c2b86b821562f';
+const tracksWithArt = tracks.map(track =>
+  (track.imageUrl && !track.imageUrl.includes(LASTFM_PLACEHOLDER))
+    ? track
+    : { ...track, imageUrl: albumArtByArtist.get(track.artist.toLowerCase()) ?? '' }
+);
+
+const gridAlbums = albums.slice(0, 16);
+const gridArtists = artists.slice(0, 16);
+const gridTracks = tracksWithArt.slice(0, 16);
+
+function formatRelativeAge(ts: number): string {
+  const ageMs = Date.now() - ts;
+  const ageSec = Math.floor(ageMs / 1000);
+  const ageMin = Math.floor(ageSec / 60);
+
+  if (ageSec < 60) return 'Updated just now';
+  if (ageMin === 1) return 'Updated 1 min ago';
+  if (ageMin < 60) return `Updated ${ageMin} min ago`;
+  const ageHr = Math.floor(ageMin / 60);
+  if (ageHr === 1) return 'Updated 1 hr ago';
+  return `Updated ${ageHr} hr ago`;
+}
+
+const updatedAt = formatRelativeAge(fetchedAt);
+const fetchedAtIso = new Date(fetchedAt).toISOString();
+---
+
+<BaseLayout title="Chart" description="A weekly chart of top albums from Last.fm, visualized with D3." ogTitle="Chart">
+  <Fragment slot="head">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&family=DM+Sans:wght@400;600&display=swap" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=language,open_in_new&display=block"
+    />
+  </Fragment>
+  <section class="chart container">
+    <h1 class="chart__heading">chart.</h1>
+    <p class="chart__intro">Weekly top albums from Last.fm.</p>
+    <time class="chart__updated" datetime={fetchedAtIso}>{updatedAt}</time>
+
+    {hasError ? (
+      <p class="chart__error">Chart unavailable — check back soon.</p>
+    ) : (
+      <>
+        <div class="chart__controls">
+          <div class="chart__view-links">
+            <a class="chart__view-link" data-for="albums" role="button" tabindex="0">albums</a>
+            <span class="chart__view-sep">/</span>
+            <a class="chart__view-link" data-for="artists" role="button" tabindex="0">artists</a>
+            <span class="chart__view-sep">/</span>
+            <a class="chart__view-link" data-for="tracks" role="button" tabindex="0">tracks</a>
+          </div>
+          <div class="chart__controls-right">
+            <label class="chart__toggle">
+              <input type="checkbox" class="chart__toggle-input" id="chart-labels-toggle" />
+              <span class="chart__toggle-pill" aria-hidden="true"></span>
+              <span class="chart__toggle-label">labels</span>
+            </label>
+            <button class="chart__copy-btn" type="button">copy chart</button>
+          </div>
+        </div>
+
+        <div class="chart__view" data-view="albums">
+          <div class="chart__body">
+            <div class="chart__col-grid">
+              <div class="chart__grid" aria-label={`Top ${gridAlbums.length} albums as grid`}>
+                {gridAlbums.map((album) => (
+                  <div class="chart__tile chart__shimmer">
+                    {album.imageUrl ? (
+                      <img
+                        src={`/api/proxy-image?url=${encodeURIComponent(album.imageUrl)}`}
+                        crossorigin="anonymous"
+                        alt={`${album.name} by ${album.artist}`}
+                        width="300"
+                        height="300"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div class="chart__tile-placeholder chart__shimmer" aria-hidden="true"></div>
+                    )}
+                    <div class="chart__tile-overlay" aria-hidden="true">
+                      <span class="chart__overlay-artist">{album.artist}</span>
+                      <span class="chart__overlay-album">{album.name}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div class="chart__col-cards">
+              <div class="chart__card-list" role="list">
+                {albums.length > 0 && (() => {
+                  const hero = albums[0];
+                  const heroWebsiteUrl = `https://www.last.fm/music/${encodeURIComponent(hero.artist)}`;
+                  return (
+                    <div class="chart__hero-card" role="listitem" data-artist-name={hero.artist}>
+                      {hero.imageUrl ? (
+                        <img class="chart__hero-card__img"
+                             src={hero.imageUrl}
+                             alt=""
+                             width="400" height="533"
+                             loading="eager" />
+                      ) : null}
+                      <div class="chart__hero-card__overlay">
+                        <span class="chart__hero-card__rank">#1</span>
+                        <span class="chart__hero-card__name">{hero.name}</span>
+                        <span class="chart__hero-card__plays">{hero.playcount} plays</span>
+                        <div class="chart__hero-card__links">
+                          <span class="chart__listen-link"
+                                data-artist={hero.artist}
+                                data-album={hero.name}
+                                data-type="album">
+                            <span class="chart__shimmer-bar chart__shimmer"></span>
+                          </span>
+                          <a class="chart__artist-link"
+                             href={heroWebsiteUrl}
+                             target="_blank" rel="noopener noreferrer"
+                             aria-label={`${hero.artist} website`}>
+                            <span class="chart__card-action-text">website</span>
+                            <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">language</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {albums.slice(1).map((album) => (
+                  <div class="chart__card chart__shimmer" role="listitem" data-artist-name={album.artist}>
+                    <div class="chart__card-rank-block"
+                         role="img"
+                         aria-label={`${album.rank}. ${formatPlaysLong(album.playcount)} plays`}>
+                      <span class="chart__card-rank-number" aria-hidden="true">{album.rank}</span>
+                      <span class="chart__card-plays-inline" aria-hidden="true">{formatPlaysLong(album.playcount)} plays</span>
+                    </div>
+                    <div class="chart__card-thumb chart__shimmer">
+                      {album.imageUrl ? (
+                        <img src={album.imageUrl} alt="" width="88" height="88" loading="lazy" />
+                      ) : (
+                        <div class="chart__card-thumb-placeholder" aria-hidden="true"></div>
+                      )}
+                    </div>
+                    <div class="chart__card-text">
+                      <span class="chart__card-title" title={album.name}>{album.name}</span>
+                      <span class="chart__card-artist" title={album.artist}>{album.artist}</span>
+                    </div>
+                    <div class="chart__card-actions">
+                      <span class="chart__listen-link" data-artist={album.artist} data-album={album.name} data-type="album">
+                        <span class="chart__shimmer-bar chart__shimmer"></span>
+                      </span>
+                      <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">open_in_new</span>
+                      <a class="chart__artist-link"
+                         href={`https://www.last.fm/music/${encodeURIComponent(album.artist)}`}
+                         target="_blank" rel="noopener noreferrer"
+                         aria-label={`${album.artist} website`}>
+                        <span class="chart__card-action-text">website</span>
+                        <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">language</span>
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart__view" data-view="artists" style="display:none">
+          <div class="chart__body">
+            <div class="chart__col-grid">
+              <div class="chart__grid chart__grid--artists" aria-label={`Top ${gridArtists.length} artists as grid`}>
+                {gridArtists.map((artist, i) => (
+                  <div class="chart__tile chart__tile--artist" data-artist={artist.name}>
+                    <div class="chart__tile-placeholder" aria-hidden="true"></div>
+                    <span class="chart__artist-rank">{String(i + 1).padStart(2, '0')}</span>
+                    <div class="chart__artist-info">
+                      <span class="chart__artist-name">{artist.name}</span>
+                      <span class="chart__artist-plays">{artist.playcount} plays</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div class="chart__col-cards">
+              <div class="chart__card-list" role="list">
+                {artists.length > 0 && (() => {
+                  const hero = artists[0];
+                  const heroWebsiteUrl = `https://www.last.fm/music/${encodeURIComponent(hero.name)}`;
+                  return (
+                    <div class="chart__hero-card" role="listitem" data-artist-name={hero.name}>
+                      <div class="chart__hero-card__overlay">
+                        <span class="chart__hero-card__rank">#1</span>
+                        <span class="chart__hero-card__name">{hero.name}</span>
+                        <span class="chart__hero-card__plays">{hero.playcount} plays</span>
+                        <div class="chart__hero-card__links">
+                          <span class="chart__listen-link"
+                                data-artist={hero.name}
+                                data-type="artist">
+                            <span class="chart__shimmer-bar chart__shimmer"></span>
+                          </span>
+                          <a class="chart__artist-link"
+                             href={heroWebsiteUrl}
+                             target="_blank" rel="noopener noreferrer"
+                             aria-label={`${hero.name} website`}>
+                            <span class="chart__card-action-text">website</span>
+                            <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">language</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {artists.slice(1).map((artist, i) => (
+                  <div class="chart__card chart__shimmer" role="listitem" data-artist-name={artist.name}>
+                    <div class="chart__card-rank-block"
+                         role="img"
+                         aria-label={`${i + 2}. ${formatPlaysLong(artist.playcount)} plays`}>
+                      <span class="chart__card-rank-number" aria-hidden="true">{i + 2}</span>
+                      <span class="chart__card-plays-inline" aria-hidden="true">{formatPlaysLong(artist.playcount)} plays</span>
+                    </div>
+                    <div class="chart__card-thumb">
+                      <div class="chart__card-thumb-placeholder" aria-hidden="true"></div>
+                    </div>
+                    <div class="chart__card-text">
+                      <span class="chart__card-title" title={artist.name}>{artist.name}</span>
+                      {/* Release block shimmer — reserves space for Phase 3 fill (D-03) */}
+                      <div class="chart__shimmer" style="min-height: 44px; margin-top: var(--space-2xs)"></div>
+                    </div>
+                    <div class="chart__card-actions">
+                      <span class="chart__listen-link" data-artist={artist.name} data-type="artist">
+                        <span class="chart__shimmer-bar chart__shimmer"></span>
+                      </span>
+                      <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">open_in_new</span>
+                      <a class="chart__artist-link"
+                         href={`https://www.last.fm/music/${encodeURIComponent(artist.name)}`}
+                         target="_blank" rel="noopener noreferrer"
+                         aria-label={`${artist.name} website`}>
+                        <span class="chart__card-action-text">website</span>
+                        <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">language</span>
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart__view" data-view="tracks" style="display:none">
+          <div class="chart__body">
+            <div class="chart__col-grid">
+              <div class="chart__grid" aria-label={`Top ${gridTracks.length} tracks as grid`}>
+                {gridTracks.map((track) => (
+                  <div class="chart__tile chart__shimmer">
+                    {track.imageUrl ? (
+                      <img
+                        src={`/api/proxy-image?url=${encodeURIComponent(track.imageUrl)}`}
+                        crossorigin="anonymous"
+                        alt={`${track.name} by ${track.artist}`}
+                        width="300"
+                        height="300"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div class="chart__tile-placeholder chart__shimmer" aria-hidden="true"></div>
+                    )}
+                    <div class="chart__tile-overlay" aria-hidden="true">
+                      <span class="chart__overlay-artist">{track.artist}</span>
+                      <span class="chart__overlay-album">{track.name}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div class="chart__col-cards">
+              <div class="chart__card-list" role="list">
+                {tracksWithArt.length > 0 && (() => {
+                  const hero = tracksWithArt[0];
+                  return (
+                    <div class="chart__hero-card" role="listitem" data-artist-name={hero.artist}>
+                      {hero.imageUrl ? (
+                        <img class="chart__hero-card__img"
+                             src={hero.imageUrl}
+                             alt=""
+                             width="400" height="533"
+                             loading="eager" />
+                      ) : null}
+                      <div class="chart__hero-card__overlay">
+                        <span class="chart__hero-card__rank">#1</span>
+                        <span class="chart__hero-card__name">{hero.name}</span>
+                        <span class="chart__hero-card__plays">{hero.playcount} plays</span>
+                        <div class="chart__hero-card__links">
+                          <span class="chart__listen-link"
+                                data-artist={hero.artist}
+                                data-track={hero.name}
+                                data-type="track">
+                            <span class="chart__shimmer-bar chart__shimmer"></span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {tracksWithArt.slice(1).map((track) => (
+                  <div class="chart__card chart__shimmer" role="listitem" data-artist-name={track.artist}>
+                    <div class="chart__card-rank-block"
+                         role="img"
+                         aria-label={`${track.rank}. ${formatPlaysLong(track.playcount)} plays`}>
+                      <span class="chart__card-rank-number" aria-hidden="true">{track.rank}</span>
+                      <span class="chart__card-plays-inline" aria-hidden="true">{formatPlaysLong(track.playcount)} plays</span>
+                    </div>
+                    <div class="chart__card-thumb chart__shimmer">
+                      {track.imageUrl ? (
+                        <img src={track.imageUrl} alt="" width="88" height="88" loading="lazy" />
+                      ) : (
+                        <div class="chart__card-thumb-placeholder" aria-hidden="true"></div>
+                      )}
+                    </div>
+                    <div class="chart__card-text">
+                      <span class="chart__card-title" title={track.name}>{track.name}</span>
+                      <span class="chart__card-artist" title={track.artist}>{track.artist}</span>
+                    </div>
+                    <div class="chart__card-actions">
+                      <span class="chart__listen-link" data-artist={track.artist} data-track={track.name} data-type="track">
+                        <span class="chart__shimmer-bar chart__shimmer"></span>
+                      </span>
+                      <span class="material-symbols-outlined chart__card-action-icon" aria-hidden="true">open_in_new</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    )}
+  </section>
+
+  <section class="chart-list-section container">
+    <h2 class="chart-list-section__heading">Weekly albums</h2>
+    <div class="chart-list" data-view="albums">
+      <ol class="text-list" role="list">
+        {Array.from({ length: 20 }).map(() => (
+          <li class="text-row" data-image="">
+            <div class="text-row__primary">
+              {/* Empty skeleton rank — JS sets textContent on load. No aria-label:
+                  it's prohibited on a roleless empty span (axe aria-prohibited-attr). */}
+              <span class="text-row__rank"></span>
+              <span class="text-row__sep" aria-hidden="true">|</span>
+              <span class="text-row__album"></span>
+              <span class="text-row__sep" aria-hidden="true">—</span>
+              <span class="text-row__artist"></span>
+            </div>
+            <div class="text-row__plays-group">
+              <span class="text-row__plays-label">Plays</span>
+              <span class="text-row__plays"></span>
+            </div>
+            <div class="text-row__links">
+              <span class="text-row__link text-row__link--disabled" aria-hidden="true">last.fm</span>
+            </div>
+            <img class="text-row__thumb" alt="" width="48" height="48" />
+          </li>
+        ))}
+      </ol>
+      <div class="chart-list__controls">
+        <button class="chart-list__load-more" type="button" aria-label="Load more albums">Load more</button>
+        <p class="chart-list__end-note" hidden>That's everything — you've reached the end of this week's chart.</p>
+        <div class="chart-list__error" role="alert" hidden>
+          <span class="chart-list__error-msg">Failed to load more albums.</span>
+          <button class="chart-list__retry" type="button">Retry</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {chartChangelog.length > 0 && (
+    <section class="chart__changelog-section container">
+      <details class="chart__changelog">
+        <summary class="chart__changelog-summary">
+          changelog
+          <span class="chart__changelog-count">{chartChangelog.length} {chartChangelog.length === 1 ? 'update' : 'updates'}</span>
+          <span class="chart__changelog-arrow" aria-hidden="true">▸</span>
+        </summary>
+        <ol class="chart__changelog-list">
+          {chartChangelog.map((entry) => (
+            <li class="chart__changelog-entry">
+              <time class="chart__changelog-date" datetime={entry.date}>
+                {formatDate(entry.date)}
+              </time>
+              <ul class="chart__changelog-items">
+                {entry.items.map((item) => (
+                  <li class="chart__changelog-item">
+                    <span class={`chart__changelog-label chart__changelog-label--${item.label}`}>
+                      {item.label}
+                    </span>
+                    {item.text}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </section>
+  )}
+
+  <dialog id="chart-copy-modal" class="chart__copy-modal" aria-label="Chart preview">
+    <button class="chart__copy-modal-close" aria-label="Close preview" type="button">×</button>
+    <img class="chart__copy-modal-img" alt="rendered chart, long-press to save" />
+    <p class="chart__copy-modal-hint">long-press to save</p>
+  </dialog>
+</BaseLayout>
+
+<style>
+  .chart {
+    padding-top: var(--space-2xl);
+    padding-bottom: var(--space-xl);
+  }
+
+  .chart__heading {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-display-large);
+    line-height: var(--lh-display-large);
+    margin-bottom: var(--space-md);
+  }
+
+  .chart__intro {
+    font-family: var(--font-body);
+    font-size: var(--text-body-large);
+    color: var(--color-on-surface-dimmed);
+    line-height: var(--lh-body-large);
+    margin-bottom: var(--space-xs);
+  }
+
+  .chart__error {
+    font-family: var(--font-body);
+    font-size: var(--text-body-large);
+    color: var(--color-on-surface-dimmed);
+    padding: var(--space-lg) 0;
+  }
+
+  .chart__updated {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.02em;
+    color: var(--color-on-surface-muted);
+    margin-bottom: var(--space-lg);
+  }
+
+  /* ---- Controls bar ---- */
+  .chart__controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-xs);
+  }
+
+  .chart__view-links {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .chart__view-link {
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-muted);
+    cursor: pointer;
+    padding: 2px 0;
+    font-weight: 500;
+    text-decoration: none;
+    user-select: none;
+  }
+
+  .chart__view-link--active {
+    color: var(--color-on-surface);
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .chart__view-sep {
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-border);
+  }
+
+  .chart__controls-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  .chart__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .chart__toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .chart__toggle-pill {
+    width: 32px;
+    height: 18px;
+    background: var(--color-border);
+    border-radius: 99px;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+
+  .chart__toggle-pill::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 12px;
+    height: 12px;
+    background: var(--color-on-surface);
+    border-radius: 50%;
+    transition: transform 0.15s;
+  }
+
+  .chart__toggle-input:checked ~ .chart__toggle-pill {
+    background: var(--color-on-surface);
+  }
+
+  .chart__toggle-input:checked ~ .chart__toggle-pill::after {
+    transform: translateX(14px);
+  }
+
+  .chart__toggle-label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+
+  .chart__copy-btn {
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 4px 12px;
+    cursor: pointer;
+    letter-spacing: 0.01em;
+  }
+
+  .chart__copy-btn:hover {
+    color: var(--color-on-surface);
+    border-color: var(--color-on-surface-dimmed);
+  }
+
+  /* ---- 2x2 grid base (mobile-first) ---- */
+  .chart__grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--grid-gap);
+    margin-bottom: var(--space-xl);
+  }
+
+  .chart__tile {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background-color: var(--color-surface-subtle);
+    overflow: hidden;
+  }
+
+  .chart__tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .chart__tile-placeholder {
+    width: 100%;
+    height: 100%;
+    background-color: var(--color-surface-subtle);
+  }
+
+  /* ---- Tile overlay ---- */
+  .chart__tile-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 18px 8px 7px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, transparent 100%);
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  .chart__grid--labels .chart__tile-overlay {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .chart__overlay-artist {
+    display: block;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chart__overlay-album {
+    display: block;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chart__col-rank {
+    width: 3ch;
+    color: var(--color-on-surface-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chart__col-art {
+    width: 56px;
+    padding-right: 0;
+  }
+
+  .chart__thumb-wrap {
+    width: 40px;
+    height: 40px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background-color: var(--color-surface-subtle);
+  }
+
+  .chart__thumb-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .chart__thumb-placeholder {
+    width: 40px;
+    height: 40px;
+    background-color: var(--color-surface-subtle);
+  }
+
+  .chart__col-plays {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-on-surface-dimmed);
+  }
+
+  .chart__listen-link {
+    color: var(--color-on-surface-muted);
+    font-size: var(--text-body-medium);
+  }
+
+  /* ---- Artist tiles ---- */
+  .chart__tile--artist {
+    position: relative;
+    background-color: var(--color-surface-subtle);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 8px;
+    cursor: default;
+    text-decoration: none;
+  }
+
+  a.chart__tile--artist[href] {
+    cursor: pointer;
+  }
+
+  .chart__tile--artist.has-photo {
+    background-size: cover;
+    background-position: center top;
+    overflow: hidden;
+  }
+
+  .chart__tile--artist.has-photo::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.1) 60%, transparent 100%);
+    pointer-events: none;
+  }
+
+  .chart__tile--artist.has-photo .chart__artist-rank {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .chart__tile--artist.has-photo .chart__artist-name {
+    color: #fff;
+  }
+
+  .chart__tile--artist.has-photo .chart__artist-plays {
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .chart__artist-rank {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-on-surface-muted);
+    line-height: 1;
+  }
+
+  .chart__artist-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .chart__artist-name {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--color-on-surface-dimmed);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chart__artist-plays {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: var(--color-on-surface-muted);
+    line-height: 1;
+  }
+
+  .chart__tile--artist.has-photo .chart__artist-rank {
+    z-index: 2;
+  }
+
+  .chart__tile--artist.has-photo .chart__artist-info {
+    position: relative;
+    z-index: 2;
+  }
+
+  /* ---- Responsive: expand to 4 columns at wider viewports ---- */
+  @media (min-width: 600px) {
+    .chart__grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  /* ── Changelog ── */
+  .chart__changelog-section {
+    padding-bottom: var(--space-xl);
+  }
+  .chart__changelog {
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-md);
+    margin-top: var(--space-lg);
+  }
+  .chart__changelog-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    user-select: none;
+  }
+  .chart__changelog-summary::-webkit-details-marker {
+    display: none;
+  }
+  .chart__changelog-arrow {
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-muted);
+    transition: transform 150ms ease;
+    display: inline-block;
+  }
+  details[open] .chart__changelog-arrow {
+    transform: rotate(90deg);
+  }
+  .chart__changelog-count {
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-muted);
+  }
+  .chart__changelog-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-md) 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+  }
+  .chart__changelog-entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+  .chart__changelog-date {
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+  .chart__changelog-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+  .chart__changelog-item {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface);
+  }
+  .chart__changelog-label {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .chart__changelog-label--feature {
+    color: #166534;
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+  }
+  .chart__changelog-label--bugfix {
+    color: #991b1b;
+    background: #fff1f2;
+    border-color: #fecdd3;
+  }
+  .chart__changelog-label--improvement {
+    color: #1e40af;
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
+  /* ---- Dark mode: changelog badges ---- */
+  :root[data-theme="dark"] .chart__changelog-label--feature {
+    color: #86efac;
+    background: rgba(22, 101, 52, 0.3);
+    border-color: rgba(22, 101, 52, 0.5);
+  }
+  :root[data-theme="dark"] .chart__changelog-label--bugfix {
+    color: #fca5a5;
+    background: rgba(153, 27, 27, 0.3);
+    border-color: rgba(153, 27, 27, 0.5);
+  }
+  :root[data-theme="dark"] .chart__changelog-label--improvement {
+    color: #93c5fd;
+    background: rgba(30, 64, 175, 0.3);
+    border-color: rgba(30, 64, 175, 0.5);
+  }
+
+  /* ---- Shimmer loading ---- */
+  @keyframes chart-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .chart__shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface-subtle) 25%,
+      rgba(255, 255, 255, 0.15) 50%,
+      var(--color-surface-subtle) 75%
+    );
+    background-size: 200% 100%;
+    animation: chart-shimmer 2s linear infinite;
+  }
+
+  :root[data-theme="dark"] .chart__shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface-subtle) 25%,
+      rgba(255, 255, 255, 0.06) 50%,
+      var(--color-surface-subtle) 75%
+    );
+    background-size: 200% 100%;
+  }
+
+  .chart__shimmer-bar {
+    display: inline-block;
+    width: 60px;
+    height: 9px;
+    border-radius: 4px;
+    vertical-align: middle;
+  }
+
+  @keyframes chart-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  :global(.chart__listen-link a) {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: var(--text-label-medium);
+    text-decoration: none;
+    color: inherit;
+    animation: chart-fade-in 150ms ease forwards;
+  }
+
+  :global(.chart__listen-link a:hover) {
+    background: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
+    color: var(--color-on-surface);
+    text-decoration: none;
+  }
+
+  :global(.chart__listen-link a:focus-visible) {
+    outline: 2px solid var(--color-on-surface);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chart__shimmer {
+      animation: none;
+      background: var(--color-surface-subtle);
+    }
+    :global(.chart__listen-link a) {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
+  /* ---- Timeout fallback ---- */
+  .chart__hide-on-timeout {
+    transition: opacity 300ms ease;
+    opacity: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chart__hide-on-timeout {
+      transition: none;
+      opacity: 0;
+    }
+  }
+
+  /* ---- Two-column desktop layout (≥1024px) ---- */
+  .chart__body {
+    display: block; /* mobile-first: stacked */
+  }
+
+  .chart__col-cards {
+    container-type: inline-size;
+    container-name: card-list;
+  }
+
+  @media (min-width: 1024px) {
+    .chart__body {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-md); /* 24px */
+    }
+
+    .chart__col-grid {
+      flex: 0 0 60%;
+      order: 2;
+    }
+
+    .chart__col-cards {
+      flex: 0 0 40%;
+      min-width: 0;
+      order: 1;
+    }
+  }
+
+  /* ---- Hero card (rank #1) ---- */
+  .chart__hero-card {
+    position: relative;
+    overflow: clip;                        /* REQUIRED: prevents glow bleed (D-04) */
+    aspect-ratio: 3 / 4;
+    background-color: var(--color-surface-subtle);
+    border-radius: 4px;
+    margin-bottom: var(--space-xs);
+  }
+
+  .chart__hero-card::before {
+    content: '';
+    position: absolute;
+    inset: -40px;
+    z-index: 0;
+    background: radial-gradient(ellipse 80% 60% at 50% 100%, var(--card-glow-color, transparent), transparent);
+    pointer-events: none;
+  }
+
+  .chart__hero-card__img,
+  .chart__hero-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    position: relative;
+    z-index: 1;
+  }
+
+  .chart__hero-card__overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    padding: var(--space-sm);
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.75) 0%,
+      rgba(0, 0, 0, 0.15) 55%,
+      transparent 100%
+    );
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+  }
+
+  .chart__hero-card__rank {
+    font-family: var(--font-mono);
+    font-size: var(--text-label-medium);
+    line-height: var(--lh-label-medium);
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  .chart__hero-card__name {
+    font-family: var(--font-display);
+    font-size: var(--text-headline-large);
+    font-weight: 600;
+    line-height: var(--lh-headline-large);
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chart__hero-card__plays {
+    font-family: var(--font-display);
+    font-size: var(--text-title-large);
+    font-weight: 600;
+    line-height: var(--lh-title-large);
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .chart__hero-card__links {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-height: 44px;
+    flex-wrap: wrap;
+  }
+
+  .chart__hero-card__links .chart__listen-link {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: var(--text-body-medium);
+    font-family: var(--font-body);
+  }
+
+  :global(.chart__hero-card__links .chart__listen-link a) {
+    border-color: rgba(255, 255, 255, 0.6);
+    color: rgba(255, 255, 255, 0.6);
+    text-decoration: none;
+  }
+
+  :global(.chart__hero-card__links .chart__listen-link a:hover) {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    text-decoration: none;
+  }
+
+  .chart__hero-card__links .chart__artist-link {
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  .chart__hero-card__links .chart__artist-link:hover {
+    color: #ffffff;
+    text-decoration: underline;
+  }
+
+  /* ---- Material Symbols Outlined icon font ---- */
+  .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    display: inline-block;
+    line-height: 1;
+    text-transform: none;
+    letter-spacing: normal;
+    word-wrap: normal;
+    white-space: nowrap;
+    direction: ltr;
+  }
+
+  /* ---- Card list ---- */
+  .chart__card-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chart__card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs); /* 8px */
+    padding: var(--space-xs) 0;
+    overflow: clip;
+    position: relative;
+    isolation: isolate;
+  }
+
+  .chart__card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(ellipse 60% 150% at -5% 50%, var(--card-glow-color, transparent), transparent 70%);
+    opacity: 0.32;
+    pointer-events: none;
+  }
+
+  .chart__card-thumb {
+    width: 88px;
+    height: 88px;
+    flex-shrink: 0;
+    overflow: hidden;
+    background-color: var(--color-surface-subtle);
+  }
+
+  .chart__card-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .chart__card-thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    background-color: var(--color-surface-subtle);
+  }
+
+  .chart__card-rank-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    flex-shrink: 0;
+    width: 52px;
+  }
+
+  .chart__card-rank-number {
+    font-family: var(--font-mono);
+    font-size: var(--text-headline-medium);
+    line-height: var(--lh-headline-medium);
+    color: var(--color-on-surface);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chart__card-plays-inline {
+    font-family: var(--font-mono);
+    font-size: var(--text-body-small);
+    line-height: var(--lh-body-small);
+    color: var(--color-on-surface-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .chart__card-text {
+    flex: 1;
+    min-width: 0; /* required for text-overflow: ellipsis to work in flex child */
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs); /* 4px */
+  }
+
+  .chart__card-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: var(--text-body-medium);
+    font-weight: 600;
+    color: var(--color-on-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chart__card-artist {
+    font-family: 'DM Sans', sans-serif;
+    font-size: var(--text-body-small);
+    color: var(--color-on-surface-dimmed);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chart__card-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs); /* 8px */
+    flex-shrink: 0;
+  }
+
+  .chart__artist-link {
+    text-decoration: none;
+    color: var(--color-on-surface-muted);
+    font-size: var(--text-body-medium);
+    font-family: var(--font-body);
+  }
+
+  .chart__artist-link:hover {
+    color: var(--color-on-surface);
+    text-decoration: underline;
+  }
+
+  /* Phase 17: artists view release section — horizontal row layout */
+  .chart__card-release {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs); /* 8px */
+    margin-top: var(--space-2xs); /* 4px */
+  }
+
+  .chart__card-release img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .chart__card-release-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs); /* 4px */
+    min-width: 0;
+  }
+
+  .chart__card-release-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: var(--text-body-small); /* 12px */
+    line-height: var(--lh-body-small); /* 1.33 */
+    color: var(--color-on-surface-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+  }
+
+  .chart__card-release-year {
+    font-family: var(--font-mono);
+    font-size: var(--text-label-small); /* 11px */
+    line-height: var(--lh-label-small); /* 1.45 */
+    color: var(--color-on-surface-dimmed);
+    white-space: nowrap;
+  }
+
+  /* ---- Action text sizing ---- */
+  .chart__card-action-text { display: inline; font-size: var(--text-label-medium); }
+  .chart__card-action-icon { display: none; }
+
+  @container card-list (max-width: 480px) {
+    /* two-row stacking — actions wrap to second row at narrow widths */
+    .chart__card {
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .chart__card-actions {
+      width: 100%;
+      min-height: 44px;
+      align-items: center;
+    }
+  }
+
+  @container card-list (max-width: 375px) {
+    .chart__card-rank-number {
+      font-size: var(--text-headline-small);
+    }
+  }
+
+  /* ---- Copy modal ---- */
+  .chart__copy-modal {
+    inset: 0;
+    margin: auto;
+    border: none;
+    border-radius: 8px;
+    padding: 0;
+    max-width: min(90vw, 600px);
+    max-height: 90vh;
+    overflow-y: auto;
+    background: var(--color-surface);
+    color: var(--color-on-surface);
+  }
+
+  .chart__copy-modal::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+  }
+
+  .chart__copy-modal-img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .chart__copy-modal-hint {
+    display: none;
+    margin: var(--space-xs) var(--space-sm) var(--space-sm);
+    font-family: var(--font-body);
+    font-size: var(--text-body-small);
+    color: var(--color-on-surface-muted);
+    text-align: center;
+  }
+
+  @media (pointer: coarse) {
+    .chart__copy-modal-hint {
+      display: block;
+    }
+  }
+
+  .chart__copy-modal-close {
+    position: absolute;
+    top: var(--space-xs);
+    right: var(--space-xs);
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  /* ---- Weekly albums text list ---- */
+
+  .chart-list-section {
+    padding-top: var(--space-xl);
+    padding-bottom: var(--space-2xl);
+  }
+
+  .chart-list-section__heading {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-headline-medium);
+    color: var(--color-on-surface);
+    margin: 0 0 var(--space-md) 0;
+  }
+
+  .text-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Row layout — justify-between three columns: primary (left, grows) | plays-group | links.
+     flex-wrap lets the row break gracefully on narrow viewports. */
+  .text-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-xs) var(--space-md);
+    padding: var(--space-xs) 0;
+    border-bottom: 1px solid transparent;
+    transition: border-color 120ms ease;
+  }
+
+  /* Hairline rule below the active row (transparent border at rest so layout doesn't shift) */
+  .text-row[data-active="true"] {
+    border-bottom-color: var(--color-on-surface-muted);
+  }
+
+  /* Left column — Rank | Album — Artist. Grows to fill row width. */
+  .text-row__primary {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    min-width: 0;
+    flex: 1 1 auto;
+    font-family: 'DM Sans', sans-serif;
+    font-size: var(--text-body-medium);
+  }
+
+  .text-row__rank {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-on-surface);
+    flex-shrink: 0;
+  }
+
+  .text-row__sep {
+    color: var(--color-on-surface-muted);
+  }
+
+  .text-row__album {
+    font-weight: 600;
+    color: var(--color-on-surface);
+  }
+
+  .text-row__artist {
+    font-weight: 400;
+    color: var(--color-on-surface-dimmed);
+    transition: color 120ms ease;
+  }
+
+  /* Center column — Plays {number}. Natural width, hugs the right gutter. */
+  .text-row__plays-group {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    flex-shrink: 0;
+    font-size: var(--text-body-medium);
+  }
+
+  .text-row__plays-label {
+    font-family: 'DM Sans', sans-serif;
+    color: var(--color-on-surface-muted);
+  }
+
+  .text-row__plays {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-on-surface-muted);
+    transition: color 120ms ease;
+  }
+
+  /* Right column — last.fm · website. Natural width. */
+  .text-row__links {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    flex-shrink: 0;
+    font-size: var(--text-body-medium);
+  }
+
+  .text-row__link {
+    color: var(--color-on-surface-muted);
+    text-decoration: none;
+    font-weight: 400;
+    font-family: 'DM Sans', sans-serif;
+    transition: color 120ms ease;
+  }
+
+  .text-row__link:hover,
+  .text-row__link:focus-visible {
+    color: var(--color-on-surface);
+    text-decoration: underline;
+  }
+
+  .text-row__link:focus-visible {
+    outline: 2px solid var(--color-on-surface);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  .text-row__link--disabled {
+    color: var(--color-on-surface-dimmed);
+    opacity: 0.5;
+  }
+
+  /* Active row: shift plays + artist to full on-surface color */
+  .text-row[data-active="true"] .text-row__plays,
+  .text-row[data-active="true"] .text-row__artist {
+    color: var(--color-on-surface);
+  }
+
+  /* Inline thumb — hidden on hover-capable (desktop), shown on touch */
+  .text-row__thumb {
+    display: none;
+    object-fit: cover;
+    border-radius: 2px;
+  }
+
+  @media (hover: none) {
+    .text-row__thumb {
+      display: inline-block;
+      width: 48px;
+      height: 48px;
+      flex-shrink: 0;
+      margin-left: auto;
+      align-self: center;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .text-row,
+    .text-row__plays,
+    .text-row__artist,
+    .text-row__link,
+    :global(.text-reveal-overlay) {
+      transition: none !important;
+    }
+
+    .text-row:hover .text-row__plays,
+    .text-row:hover .text-row__artist {
+      color: var(--color-on-surface);
+    }
+  }
+
+  /* ---- Floating art overlay (desktop only — JS attaches when supported) ---- */
+  :global(.text-reveal-overlay) {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 320px;
+    height: 320px;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(0, 0);
+    transition: opacity 120ms ease;
+    z-index: 100;
+    will-change: transform, opacity;
+    object-fit: cover;
+  }
+
+  :global(.text-reveal-overlay[data-visible="true"]) {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    :global(.text-reveal-overlay) { display: none; }
+  }
+
+  /* ---- Load-more controls ---- */
+  .chart-list__controls {
+    margin-top: var(--space-md);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-xs);
+  }
+
+  .chart-list__load-more {
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 6px 16px;
+    cursor: pointer;
+    letter-spacing: 0.01em;
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+
+  .chart-list__load-more:hover:not(:disabled) {
+    color: var(--color-on-surface);
+    border-color: var(--color-on-surface-dimmed);
+  }
+
+  .chart-list__load-more:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .chart-list__load-more[aria-busy="true"] {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
+  /* Suppress hover states during loading */
+  .chart-list__load-more[aria-busy="true"]:hover {
+    color: var(--color-on-surface-dimmed);
+    border-color: var(--color-border);
+  }
+
+  .chart-list__end-note {
+    font-family: var(--font-body);
+    font-size: var(--text-body-small);
+    color: var(--color-on-surface-muted);
+    margin: 0;
+    padding: var(--space-xs) 0;
+  }
+
+  .chart-list__error {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--text-body-small);
+  }
+
+  .chart-list__error-msg {
+    font-family: var(--font-body);
+    color: var(--color-on-surface-dimmed);
+  }
+
+  .chart-list__retry {
+    font-family: var(--font-body);
+    font-size: var(--text-body-small);
+    color: var(--color-on-surface-muted);
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 3px 10px;
+    cursor: pointer;
+    letter-spacing: 0.01em;
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+
+  .chart-list__retry:hover {
+    color: var(--color-on-surface);
+    border-color: var(--color-on-surface-dimmed);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chart-list__load-more,
+    .chart-list__retry {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  declare global {
+    interface Window {
+      cloudflare?: {
+        beacon?: {
+          event?: (name: string, data?: Record<string, unknown>) => void;
+        };
+      };
+    }
+  }
+
+  const STORAGE_LABELS_KEY = 'chart-labels';
+  const STORAGE_VIEW_KEY = 'chart-view';
+
+  // ---- View switching ----
+  const viewLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('.chart__view-link'));
+  const viewToggleLabel = document.querySelector<HTMLLabelElement>('.chart__toggle');
+  const copyBtn = document.querySelector<HTMLButtonElement>('.chart__copy-btn');
+  const toggleInput = document.querySelector<HTMLInputElement>('.chart__toggle-input');
+
+  let activeViewName = localStorage.getItem(STORAGE_VIEW_KEY) ?? 'albums';
+
+  function getActiveGrid(): HTMLDivElement | null {
+    return document.querySelector<HTMLDivElement>(
+      `.chart__view[data-view="${activeViewName}"] .chart__grid`
+    );
+  }
+
+  function activateView(viewName: string) {
+    activeViewName = viewName;
+
+    document.querySelectorAll<HTMLDivElement>('.chart__view').forEach((view) => {
+      view.style.display = view.dataset.view === viewName ? '' : 'none';
+    });
+
+    viewLinks.forEach((link) => {
+      link.classList.toggle('chart__view-link--active', link.dataset.for === viewName);
+    });
+
+    const isArtists = viewName === 'artists';
+    if (viewToggleLabel) viewToggleLabel.style.display = isArtists ? 'none' : '';
+    if (copyBtn) copyBtn.style.display = isArtists ? 'none' : '';
+
+    // Re-apply labels to active grid
+    if (toggleInput && !isArtists) {
+      getActiveGrid()?.classList.toggle('chart__grid--labels', toggleInput.checked);
+    }
+
+    localStorage.setItem(STORAGE_VIEW_KEY, viewName);
+  }
+
+  // Initialize
+  activateView(activeViewName);
+
+  // Apply saved labels state to initial active grid
+  if (toggleInput && localStorage.getItem(STORAGE_LABELS_KEY) === '1') {
+    toggleInput.checked = true;
+    getActiveGrid()?.classList.add('chart__grid--labels');
+  }
+
+  viewLinks.forEach((link) => {
+    link.addEventListener('click', () => {
+      activateView(link.dataset.for ?? 'albums');
+    });
+    link.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        activateView(link.dataset.for ?? 'albums');
+      }
+    });
+  });
+
+  // ---- Labels toggle ----
+  if (toggleInput) {
+    toggleInput.addEventListener('change', () => {
+      const on = toggleInput.checked;
+      getActiveGrid()?.classList.toggle('chart__grid--labels', on);
+      localStorage.setItem(STORAGE_LABELS_KEY, on ? '1' : '0');
+    });
+  }
+
+  // ---- Copy ----
+  if (copyBtn) {
+    async function buildChartBlob(grid: HTMLElement): Promise<Blob> {
+      // COPY-01: bounded async — per-tile load/decode (1.5s) absorbs transient slowness
+      // via gray-cell fallback; overall (5s) ensures cascade fall-through within Phase 13
+      // modal-tier wait ceiling.
+      const TILE_PRELOAD_TIMEOUT_MS = 1500;
+      const BUILD_BLOB_TIMEOUT_MS = 5000;
+
+      // WR-01/WR-03/IN-02: centralize the race-plus-timer pattern so the
+      // `clearTimeout` on the winning branch is impossible to forget. Without
+      // this, the loser-side timer keeps the closure + Error allocation alive
+      // until it ticks — up to ~25 dangling per copy click at the per-tile
+      // layer plus one per buildChartBlob call at the outer layer.
+      const withTimeout = <T,>(p: Promise<T>, ms: number, msg: string): Promise<T> => {
+        let id: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          id = setTimeout(() => reject(new Error(msg)), ms);
+        });
+        return Promise.race([p, timeout]).finally(() => {
+          if (id !== undefined) clearTimeout(id);
+        });
+      };
+
+      const build = async (): Promise<Blob> => {
+        const labelsOn = grid.classList.contains('chart__grid--labels');
+        const tiles = Array.from(grid.querySelectorAll<HTMLDivElement>('.chart__tile'));
+
+        const TILE_SIZE = 300;
+        const COLS = 4;
+        const ROWS = Math.ceil(tiles.length / COLS);
+        const canvas = document.createElement('canvas');
+        canvas.width = TILE_SIZE * COLS;
+        canvas.height = TILE_SIZE * ROWS;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Could not get 2D canvas context');
+
+        const [imageData] = await Promise.all([
+          Promise.all(
+            tiles.map(async (tile, tileIndex) => {
+              const img = tile.querySelector('img');
+              const artist = tile.querySelector('.chart__overlay-artist')?.textContent ?? '';
+              const album = tile.querySelector('.chart__overlay-album')?.textContent ?? '';
+              let drawable: HTMLImageElement | null = null;
+              if (img) {
+                if (img.complete) {
+                  drawable = img;
+                } else {
+                  // WR-02: hoist `cleanup` so it is reachable from the OUTER
+                  // try/finally. The inner promise's natural `{ once: true }`
+                  // removal only fires when load/error actually dispatches —
+                  // if the timer wins the race, the listeners would otherwise
+                  // stay attached to the DOM <img> and fire on the eventual
+                  // lazy fetch, accumulating across copy clicks. The outer
+                  // `finally` here runs on EVERY branch (success, load error,
+                  // per-tile timeout, decode reject) so the listeners are
+                  // always detached.
+                  let cleanup: () => void = () => {};
+                  try {
+                    // D-03: mutate DOM img in place — browser dedupes in-flight request
+                    // against the existing src (COPY-02: zero new per-tile fetches).
+                    img.loading = 'eager';
+                    img.fetchPriority = 'high';
+                    const loadPromise = new Promise<void>((resolve, reject) => {
+                      const onLoad = () => resolve();
+                      const onError = () => reject(new Error('img load error'));
+                      cleanup = () => {
+                        img.removeEventListener('load', onLoad);
+                        img.removeEventListener('error', onError);
+                      };
+                      img.addEventListener('load', onLoad, { once: true });
+                      img.addEventListener('error', onError, { once: true });
+                    });
+                    await withTimeout(loadPromise, TILE_PRELOAD_TIMEOUT_MS, 'tile load timeout');
+                    await img.decode();
+                    drawable = img;
+                  } catch (err) {
+                    // per-tile timeout or load error or decode reject — fall through to gray cell below (D-05)
+                    console.warn('[chart] tile preload skipped', tileIndex, err);
+                  } finally {
+                    // WR-02: detach listeners on EVERY branch. `{ once: true }`
+                    // only auto-removes on dispatch; if the timer won the race,
+                    // neither onLoad nor onError fired and the handlers would
+                    // otherwise leak onto the live DOM <img>.
+                    cleanup();
+                  }
+                }
+              }
+              return { img: drawable, artist, album };
+            })
+          ),
+          labelsOn
+            ? Promise.all([
+                document.fonts.load('600 10px "DM Sans"'),
+                document.fonts.load('400 9px "DM Sans"'),
+              ])
+            : Promise.resolve(),
+        ]);
+
+        imageData.forEach(({ img, artist, album }, i) => {
+          const col = i % COLS;
+          const row = Math.floor(i / COLS);
+          const x = col * TILE_SIZE;
+          const y = row * TILE_SIZE;
+
+          if (img) {
+            ctx.drawImage(img, x, y, TILE_SIZE, TILE_SIZE);
+          } else {
+            ctx.fillStyle = '#e5e5e5';
+            ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+          }
+
+          if (labelsOn) {
+            const grad = ctx.createLinearGradient(0, y + TILE_SIZE, 0, y + TILE_SIZE - 90);
+            grad.addColorStop(0, 'rgba(0,0,0,0.72)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '600 10px "DM Sans", sans-serif';
+            ctx.fillText(artist, x + 8, y + TILE_SIZE - 16, TILE_SIZE - 16);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.75)';
+            ctx.font = '400 9px "DM Sans", sans-serif';
+            ctx.fillText(album, x + 8, y + TILE_SIZE - 5, TILE_SIZE - 16);
+          }
+        });
+
+        return new Promise<Blob>((resolve, reject) =>
+          canvas.toBlob(
+            (b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))),
+            'image/png'
+          )
+        );
+      };
+
+      return withTimeout(build(), BUILD_BLOB_TIMEOUT_MS, 'buildChartBlob timeout');
+    }
+
+    type CopyEvent = 'copy-success' | 'copy-shared' | 'copy-cancelled' | 'copy-modal' | 'copy-failed';
+
+    function track(event: CopyEvent): void {
+      if (import.meta.env.DEV) {
+        console.debug('[chart-telemetry]', event);
+      }
+      try {
+        const maybePromise = window.cloudflare?.beacon?.event?.(event);
+        // D-01R / WR-01: the runtime symbol doesn't exist today and the API
+        // shape is unknown. If a future CF event() returns a Promise (or
+        // thenable), swallow rejections so they cannot escape as unhandled
+        // promise rejections. D-06: telemetry never breaks the cascade.
+        if (maybePromise && typeof (maybePromise as Promise<unknown>).then === 'function') {
+          (maybePromise as Promise<unknown>).catch(() => {
+            // D-06: telemetry never breaks the cascade.
+          });
+        }
+      } catch {
+        // D-06: telemetry never breaks the cascade.
+      }
+    }
+
+    function finish(label: string) {
+      copyBtn!.textContent = label;
+      copyBtn!.disabled = false;
+      setTimeout(() => {
+        if (copyBtn!.textContent !== 'copy chart') {
+          copyBtn!.textContent = 'copy chart';
+        }
+      }, 2000);
+    }
+
+    // ---- Modal handlers (× close button + backdrop click) ----
+    // Escape dismissal and return-focus are native <dialog>.showModal() behaviors
+    // and do not require JS. Backdrop tap requires an explicit click listener
+    // (the `cancel` event fires only on Escape, NOT on backdrop tap) — see
+    // 13-RESEARCH.md §2 for the iOS Safari-confirmed pattern.
+    const modalCloseBtn = document.querySelector<HTMLButtonElement>('.chart__copy-modal-close');
+    modalCloseBtn?.addEventListener('click', () => {
+      const modal = document.getElementById('chart-copy-modal') as HTMLDialogElement | null;
+      modal?.close();
+    });
+
+    const modalEl = document.getElementById('chart-copy-modal') as HTMLDialogElement | null;
+    modalEl?.addEventListener('click', (e) => {
+      if (e.target === modalEl) modalEl.close();
+    });
+
+    copyBtn.addEventListener('click', async () => {
+      const grid = getActiveGrid();
+      if (!grid) return;
+
+      copyBtn.disabled = true;
+      copyBtn.textContent = 'copying…';
+
+      // 1. Clipboard — pass the unawaited buildChartBlob(grid) Promise into
+      //    ClipboardItem so iOS Safari 16.4+ sees a synchronous call chain
+      //    from the user gesture through navigator.clipboard.write. All
+      //    canvas work (decode, drawImage, toBlob) runs inside the Promise.
+      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': buildChartBlob(grid) })]);
+          finish('copied!');
+          track('copy-success');
+          return;
+        } catch (err) {
+          console.warn('[chart] clipboard write failed, trying share:', err);
+        }
+      }
+
+      // Materialize the blob for Web Share + modal tiers. If the Promise
+      // rejects here (canvas context unavailable, toBlob null, decode
+      // catastrophe), finish('failed') and bail — no share, no last-resort.
+      let blob: Blob;
+      try {
+        blob = await buildChartBlob(grid);
+      } catch (err) {
+        console.error('[chart] image build failed:', err);
+        finish('failed');
+        track('copy-failed');
+        return;
+      }
+
+      // 2. Web Share API — iOS 15+, Android Chrome.
+      const file = new File([blob], 'chart.png', { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'chart' });
+          finish('shared!');
+          track('copy-shared');
+          return;
+        } catch (err) {
+          if ((err as Error).name === 'AbortError') {
+            finish('copy chart');
+            track('copy-cancelled');
+            return;
+          }
+          console.warn('[chart] share failed, showing modal:', err);
+        }
+      }
+
+      // 3. Last resort: in-page modal with long-press save hint.
+      const modal = document.getElementById('chart-copy-modal') as HTMLDialogElement | null;
+      const modalImg = modal?.querySelector<HTMLImageElement>('.chart__copy-modal-img');
+      if (modal && modalImg && !modal.open) {
+        const url = URL.createObjectURL(blob);
+        modalImg.src = url;
+        modal.addEventListener('close', () => URL.revokeObjectURL(url), { once: true });
+        modal.showModal();
+        finish('tap to save');
+        track('copy-modal');
+        console.warn('[chart] modal shown — clipboard and share unavailable');
+      } else if (modal && modalImg && modal.open) {
+        // Modal already open — second tap during open state; do nothing destructive.
+        // finish() runs to clear the 'copying…' state honestly.
+        finish('tap to save');
+        track('copy-modal');
+      } else {
+        // Modal element missing from DOM — SSR regression, true failure state.
+        finish('failed');
+        track('copy-failed');
+        console.error('[chart] modal element missing from DOM — cannot fall back');
+      }
+    });
+  }
+
+  // ---- Progressive fill ----
+  type LatestRelease = { coverUrl: string; title: string; date?: string };
+
+  type ChartArtist = {
+    name: string;
+    mbid: string;
+    url: string;
+    imageUrl: string;
+    glowColor?: string;
+    latestRelease: LatestRelease | null;
+  };
+
+  type ChartAlbum = {
+    rank: number;
+    name: string;
+    artist: string;
+    playcount: number;
+    imageUrl: string;
+    listenUrl: string | null;
+  };
+
+  type ChartTrack = {
+    rank: number;
+    name: string;
+    artist: string;
+    playcount: number;
+    imageUrl: string;
+    listenUrl: string | null;
+  };
+
+  type ChartDataResponse = {
+    fetchedAt: number;
+    albums: ChartAlbum[];
+    tracks: ChartTrack[];
+    artists: ChartArtist[];
+  };
+
+  type ArtistMap = Map<string, ChartArtist>;
+
+  function fallbackAll() {
+    document.querySelectorAll<HTMLElement>(
+      '.chart__card, .chart__hero-card, .chart__card-thumb, .chart__shimmer-bar'
+    ).forEach(el => el.classList.remove('chart__shimmer'));
+
+    const hideTargets = document.querySelectorAll<HTMLElement>(
+      '.chart__card-thumb-placeholder, .chart__shimmer-bar, .chart__tile--artist .chart__tile-placeholder'
+    );
+    const releaseShimmers = document.querySelectorAll<HTMLElement>(
+      '.chart__card-text div.chart__shimmer'
+    );
+    const allHide = [...hideTargets, ...releaseShimmers];
+
+    allHide.forEach(el => el.classList.add('chart__hide-on-timeout'));
+
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      allHide.forEach(el => { el.style.display = 'none'; });
+    } else {
+      setTimeout(() => {
+        allHide.forEach(el => { el.style.display = 'none'; });
+      }, 350);
+    }
+  }
+
+  function inferSource(url: string): 'odesli' | 'bandcamp' | 'lastfm' {
+    if (url.includes('song.link') || url.includes('odesli.co')) return 'odesli';
+    if (url.includes('bandcamp.com')) return 'bandcamp';
+    return 'lastfm';
+  }
+
+  function injectListenLink(span: HTMLSpanElement, url: string, entityLabel: string) {
+    const source = inferSource(url);
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = source === 'bandcamp' ? 'bandcamp'
+      : source === 'odesli' ? 'song.link'
+      : 'last.fm';
+    a.setAttribute('aria-label', `Listen to ${entityLabel} on ${a.textContent}`);
+    span.textContent = '';
+    span.appendChild(a);
+  }
+
+  function injectArtistThumb(thumb: HTMLElement, imageUrl: string) {
+    const placeholder = thumb.querySelector('.chart__card-thumb-placeholder');
+    if (placeholder) placeholder.remove();
+
+    const img = document.createElement('img');
+    img.src = imageUrl;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.width = 88;
+    img.height = 88;
+    thumb.appendChild(img);
+  }
+
+  function injectArtistHeroPhoto(heroCard: HTMLElement, imageUrl: string) {
+    const overlay = heroCard.querySelector('.chart__hero-card__overlay');
+    const img = document.createElement('img');
+    img.className = 'chart__hero-card__img';
+    img.src = imageUrl;
+    img.alt = '';
+    img.width = 400;
+    img.height = 533;
+    img.loading = 'eager';
+    // Inline styles required: dynamically created elements don't carry Astro's
+    // scope attribute, so the scoped .chart__hero-card__img rule won't match.
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;position:relative;z-index:1';
+    heroCard.insertBefore(img, overlay);
+  }
+
+  function injectReleaseBlock(cardText: HTMLElement, release: LatestRelease) {
+    const shimmerDiv = cardText.querySelector<HTMLElement>('div.chart__shimmer');
+    if (shimmerDiv) shimmerDiv.remove();
+
+    const block = document.createElement('div');
+    block.className = 'chart__card-release';
+
+    const coverImg = document.createElement('img');
+    coverImg.src = release.coverUrl;
+    coverImg.alt = '';
+    coverImg.loading = 'lazy';
+    coverImg.width = 48;
+    coverImg.height = 48;
+    block.appendChild(coverImg);
+
+    const info = document.createElement('div');
+    info.className = 'chart__card-release-info';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'chart__card-release-title';
+    titleSpan.textContent = release.title;
+
+    const yearSpan = document.createElement('span');
+    yearSpan.className = 'chart__card-release-year';
+    yearSpan.textContent = release.date ? release.date.slice(0, 4) : '';
+
+    info.appendChild(titleSpan);
+    info.appendChild(yearSpan);
+    block.appendChild(info);
+    cardText.appendChild(block);
+  }
+
+  function fillArtistGridTiles(artistMap: ArtistMap) {
+    document.querySelectorAll<HTMLElement>('.chart__tile--artist').forEach(tile => {
+      const name = tile.dataset.artist?.toLowerCase() ?? '';
+      const a = artistMap.get(name);
+      if (a?.imageUrl) {
+        tile.querySelector('.chart__tile-placeholder')?.remove();
+        tile.style.backgroundImage = `url('${a.imageUrl}')`;
+        tile.classList.add('has-photo');
+      }
+    });
+  }
+
+  function fillHero(heroCard: HTMLElement, item: ChartAlbum | ChartTrack | ChartArtist, artistMap: ArtistMap, view: string) {
+    heroCard.classList.remove('chart__shimmer');
+    const aName = heroCard.dataset.artistName?.toLowerCase() ?? '';
+    const artistData = artistMap.get(aName);
+    if (artistData?.glowColor) heroCard.style.setProperty('--card-glow-color', artistData.glowColor);
+
+    const span = heroCard.querySelector<HTMLSpanElement>('.chart__listen-link');
+    if (span) {
+      if (view === 'albums') {
+        const album = item as ChartAlbum;
+        if (album.listenUrl) {
+          injectListenLink(span, album.listenUrl, `${album.name} by ${album.artist}`);
+        } else {
+          span.textContent = '';
+        }
+      } else if (view === 'tracks') {
+        const track = item as ChartTrack;
+        if (track.listenUrl) {
+          injectListenLink(span, track.listenUrl, `${track.name} by ${track.artist}`);
+        } else {
+          span.textContent = '';
+        }
+      }
+      // artists view: no listenUrl field — skip
+    }
+
+    const artistLink = heroCard.querySelector<HTMLAnchorElement>('.chart__artist-link');
+    if (artistLink && artistData?.url) artistLink.href = artistData.url;
+
+    if (view === 'artists' && artistData?.imageUrl) {
+      injectArtistHeroPhoto(heroCard, artistData.imageUrl);
+    }
+  }
+
+  function fillCard(card: HTMLElement, item: ChartAlbum | ChartTrack | ChartArtist | undefined, artistMap: ArtistMap, view: string) {
+    if (!item) return;
+    card.classList.remove('chart__shimmer');
+    const aName = card.dataset.artistName?.toLowerCase() ?? '';
+    const artistData = artistMap.get(aName);
+    if (artistData?.glowColor) card.style.setProperty('--card-glow-color', artistData.glowColor);
+
+    const span = card.querySelector<HTMLSpanElement>('.chart__listen-link');
+    if (span) {
+      if (view === 'albums') {
+        const album = item as ChartAlbum;
+        if (album.listenUrl) {
+          injectListenLink(span, album.listenUrl, `${album.name} by ${album.artist}`);
+        } else {
+          span.textContent = '';
+        }
+      } else if (view === 'tracks') {
+        const track = item as ChartTrack;
+        if (track.listenUrl) {
+          injectListenLink(span, track.listenUrl, `${track.name} by ${track.artist}`);
+        } else {
+          span.textContent = '';
+        }
+      } else if (view === 'artists') {
+        const artist = item as ChartArtist;
+        span.textContent = '';
+        // artists have no listenUrl — clear any shimmer-bar content
+        void artist;
+      }
+    }
+
+    const artistLink = card.querySelector<HTMLAnchorElement>('.chart__artist-link');
+    if (artistLink && artistData?.url) artistLink.href = artistData.url;
+
+    if (view === 'artists') {
+      const thumb = card.querySelector<HTMLElement>('.chart__card-thumb');
+      if (thumb && artistData?.imageUrl) injectArtistThumb(thumb, artistData.imageUrl);
+      const cardText = card.querySelector<HTMLElement>('.chart__card-text');
+      if (cardText && artistData?.latestRelease) injectReleaseBlock(cardText, artistData.latestRelease);
+    }
+  }
+
+  function fillTab(view: string, items: Array<ChartAlbum | ChartTrack | ChartArtist>, artistMap: ArtistMap) {
+    const container = document.querySelector<HTMLElement>(`.chart__view[data-view="${view}"] .chart__card-list`);
+    if (!container) return;
+    const heroCard = container.querySelector<HTMLElement>('.chart__hero-card');
+    if (heroCard && items[0]) fillHero(heroCard, items[0], artistMap, view);
+    const rankedCards = Array.from(container.querySelectorAll<HTMLElement>('.chart__card'));
+    function scheduleNext(i: number) {
+      if (i >= rankedCards.length) return;
+      requestAnimationFrame(() => {
+        fillCard(rankedCards[i], items[i + 1], artistMap, view);
+        scheduleNext(i + 1);
+      });
+    }
+    scheduleNext(0);
+  }
+
+  // ---- Text list helpers ----
+
+  function listFormatPlays(n: number): string {
+    if (n >= 999_950) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+    return String(n);
+  }
+
+  // Fill the initial 20 skeleton rows of the text list from the chart-data payload (D-05).
+  // Uses textContent (not innerHTML) for all user-supplied strings — T-18-07 XSS mitigation.
+  interface ChartListRow {
+    rank: number;
+    name: string;
+    artist: string;
+    playcount: number;
+    imageUrl: string;
+    url: string; // Last.fm permalink (raw getTopAlbums field) — NOT enrichment (REVL-01)
+  }
+  interface ChartListResponse {
+    view: string;
+    rows: ChartListRow[];
+    offset: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  }
+
+  function fillTextList(view: string, albums: ChartListRow[]): void {
+    const ol = document.querySelector<HTMLOListElement>(
+      `.chart-list[data-view="${view}"] .text-list`
+    );
+    if (!ol) return;
+
+    const rows = Array.from(ol.querySelectorAll<HTMLLIElement>('.text-row'));
+
+    // Remove surplus skeleton rows if API returned fewer albums than skeletons
+    if (albums.length < rows.length) {
+      rows.slice(albums.length).forEach(r => r.remove());
+    }
+
+    const count = Math.min(albums.length, rows.length);
+    for (let i = 0; i < count; i++) {
+      const row = rows[i];
+      const album = albums[i];
+      if (!row || !album) continue;
+
+      // Set data-image for Phase 19 reveal engine (D-13)
+      row.setAttribute('data-image', album.imageUrl ?? '');
+
+      // Fill text via textContent — no innerHTML (T-18-07)
+      const rankEl = row.querySelector<HTMLElement>('.text-row__rank');
+      if (rankEl) {
+        rankEl.textContent = String(album.rank); // full unpadded rank (D-14)
+        rankEl.removeAttribute('aria-label'); // remove SSR placeholder aria-label
+      }
+
+      const albumEl = row.querySelector<HTMLElement>('.text-row__album');
+      if (albumEl) {
+        albumEl.textContent = album.name;
+        albumEl.title = album.name;
+      }
+
+      const artistEl = row.querySelector<HTMLElement>('.text-row__artist');
+      if (artistEl) {
+        artistEl.textContent = album.artist;
+        artistEl.title = album.artist;
+      }
+
+      const playsEl = row.querySelector<HTMLElement>('.text-row__plays');
+      if (playsEl) {
+        playsEl.textContent = listFormatPlays(album.playcount); // abbreviated (D-14)
+      }
+
+      // Wire last.fm link — replace disabled span with real anchor when url present (D-06, REVL-01)
+      const linksDiv = row.querySelector<HTMLElement>('.text-row__links');
+      if (linksDiv && album.url) {
+        const existingSpan = linksDiv.querySelector('.text-row__link--disabled');
+        if (existingSpan) {
+          const a = document.createElement('a');
+          a.href = album.url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.className = 'text-row__link';
+          a.setAttribute('aria-label', `Listen to ${album.name} by ${album.artist} on last.fm`);
+          a.textContent = 'last.fm';
+          existingSpan.replaceWith(a);
+        }
+      }
+      // If album.url is absent, the disabled span remains (D-06 fallback)
+
+      // Set thumb src from raw CDN url (D-08; no proxy-image for plain <img> display)
+      if (album.imageUrl) {
+        const thumb = row.querySelector<HTMLImageElement>('.text-row__thumb');
+        if (thumb) thumb.src = album.imageUrl;
+      }
+
+      // --- website link insertion point (Task 3 wires this after artist-website batch) ---
+    }
+  }
+
+  (async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const res = await fetch('/api/chart-data', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) { fallbackAll(); return; }
+      const data = await res.json() as ChartDataResponse;
+      const artistMap: ArtistMap = new Map(data.artists.map(a => [a.name.toLowerCase(), a]));
+      fillArtistGridTiles(artistMap);
+      fillTab('albums',  data.albums,  artistMap);
+      fillTab('artists', data.artists, artistMap);
+      fillTab('tracks',  data.tracks,  artistMap);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.error('[chart] progressive fill failed:', err);
+      fallbackAll();
+    }
+  })();
+
+  // ---- Artist-website batch lookup (REVL-02) ----
+  // Appends a '·' sep + website <a> to each rendered row whose artist has a cached
+  // genuine external website (D-03: last.fm-host URLs already filtered server-side).
+  // On fetch failure or non-ok response the website slot is silently omitted (graceful).
+  // All DOM writes via createElement + textContent + setAttribute — no innerHTML (T-18-07).
+  async function appendWebsiteLinks(
+    ol: HTMLOListElement,
+    rows: ChartListRow[]
+  ): Promise<void> {
+    if (rows.length === 0) return;
+
+    // Collect unique artist names (preserving original casing for response matching)
+    const uniqueArtists = [...new Set(rows.map(r => r.artist))];
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    let websites: Record<string, string | null> = {};
+    try {
+      const res = await fetch('/api/artist-websites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artists: uniqueArtists }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) return; // graceful omit on non-ok (REVL-02)
+      websites = await res.json() as Record<string, string | null>;
+    } catch {
+      clearTimeout(timeoutId);
+      return; // graceful omit on fetch error/timeout (REVL-02)
+    }
+
+    // Append website slot to each row whose artist maps to a non-null url
+    const rowEls = Array.from(ol.querySelectorAll<HTMLLIElement>('.text-row'));
+    for (const rowEl of rowEls) {
+      // Find the corresponding album data by rank attribute or position
+      const rankEl = rowEl.querySelector('.text-row__rank');
+      if (!rankEl) continue;
+      const rank = Number(rankEl.textContent);
+      const album = rows.find(r => r.rank === rank);
+      if (!album) continue;
+
+      const websiteUrl = websites[album.artist];
+      if (!websiteUrl) continue; // null or undefined — no slot
+
+      const linksDiv = rowEl.querySelector<HTMLElement>('.text-row__links');
+      if (!linksDiv) continue;
+
+      const sep = document.createElement('span');
+      sep.className = 'text-row__sep';
+      sep.setAttribute('aria-hidden', 'true');
+      sep.textContent = '·';
+      linksDiv.appendChild(sep);
+
+      const webA = document.createElement('a');
+      webA.href = websiteUrl;
+      webA.target = '_blank';
+      webA.rel = 'noopener noreferrer';
+      webA.className = 'text-row__link';
+      webA.setAttribute('aria-label', `${album.artist} website`);
+      webA.textContent = 'website';
+      linksDiv.appendChild(webA);
+    }
+  }
+
+  // Initial 20 list rows fill from the lightweight /api/chart-list endpoint
+  // (revised D-05): independent of the slow enriched /api/chart-data path, so the
+  // list shows live data without blocking on cold MusicBrainz/glow enrichment. The
+  // list never reads enriched fields, and Load-more (Plan 18-04) uses the same source.
+  (async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const res = await fetch('/api/chart-list?view=albums&offset=0&limit=20', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) return; // skeleton rows remain (acceptable this phase)
+      const data = await res.json() as ChartListResponse;
+      fillTextList('albums', data.rows);
+      // Wire website links after rows are filled — single batch POST per fill (REVL-02)
+      const ol = document.querySelector<HTMLOListElement>('.chart-list[data-view="albums"] .text-list');
+      if (ol) await appendWebsiteLinks(ol, data.rows);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.error('[chart] list fill failed:', err); // skeleton rows remain
+    }
+  })();
+
+  // ---- Load-more pagination ----
+  // Keyed by activeViewName (D-12) so artists/tracks become data-wiring later.
+  // Initial 20 rows already filled by the IIFE above — offset starts at 20.
+  // T-18-09: all row text set via textContent; data-image via setAttribute (no innerHTML).
+  // T-18-10: one chunk per click (user-driven); AbortController 10s timeout per request.
+  // T-18-11: retry refetches the SAME offset on explicit user action; no auto-retry.
+
+  // Per-view offset state (only albums wired this phase; artists/tracks deferred D-12)
+  const listOffsets: Record<string, number> = { albums: 20, artists: 20, tracks: 20 };
+  let loadMoreInFlight = false;
+
+  function createTextRow(album: ChartListRow): HTMLLIElement {
+    const li = document.createElement('li');
+    li.className = 'text-row';
+    // T-18-09: data-image via setAttribute, not innerHTML
+    li.setAttribute('data-image', album.imageUrl ?? '');
+
+    // Primary: rank | album — artist
+    const primary = document.createElement('div');
+    primary.className = 'text-row__primary';
+
+    const rankSpan = document.createElement('span');
+    rankSpan.className = 'text-row__rank';
+    rankSpan.textContent = String(album.rank); // full unpadded rank (D-14, T-18-09)
+    primary.appendChild(rankSpan);
+
+    const sep1 = document.createElement('span');
+    sep1.className = 'text-row__sep';
+    sep1.setAttribute('aria-hidden', 'true');
+    sep1.textContent = '|';
+    primary.appendChild(sep1);
+
+    const albumSpan = document.createElement('span');
+    albumSpan.className = 'text-row__album';
+    albumSpan.textContent = album.name; // T-18-09: textContent only
+    albumSpan.title = album.name;
+    primary.appendChild(albumSpan);
+
+    const sep2 = document.createElement('span');
+    sep2.className = 'text-row__sep';
+    sep2.setAttribute('aria-hidden', 'true');
+    sep2.textContent = '—';
+    primary.appendChild(sep2);
+
+    const artistSpan = document.createElement('span');
+    artistSpan.className = 'text-row__artist';
+    artistSpan.textContent = album.artist; // T-18-09: textContent only
+    artistSpan.title = album.artist;
+    primary.appendChild(artistSpan);
+
+    li.appendChild(primary);
+
+    // Plays group
+    const playsGroup = document.createElement('div');
+    playsGroup.className = 'text-row__plays-group';
+
+    const playsLabel = document.createElement('span');
+    playsLabel.className = 'text-row__plays-label';
+    playsLabel.textContent = 'Plays';
+    playsGroup.appendChild(playsLabel);
+
+    const playsVal = document.createElement('span');
+    playsVal.className = 'text-row__plays';
+    playsVal.textContent = listFormatPlays(album.playcount); // abbreviated (D-14, T-18-09)
+    playsGroup.appendChild(playsVal);
+
+    li.appendChild(playsGroup);
+
+    // Links — Phase 19: real last.fm link or disabled span fallback (D-06, REVL-01)
+    const linksDiv = document.createElement('div');
+    linksDiv.className = 'text-row__links';
+
+    if (album.url) {
+      const lfmA = document.createElement('a');
+      lfmA.href = album.url;
+      lfmA.target = '_blank';
+      lfmA.rel = 'noopener noreferrer';
+      lfmA.className = 'text-row__link';
+      lfmA.setAttribute('aria-label', `Listen to ${album.name} by ${album.artist} on last.fm`);
+      lfmA.textContent = 'last.fm';
+      linksDiv.appendChild(lfmA);
+    } else {
+      const linkSpan = document.createElement('span');
+      linkSpan.className = 'text-row__link text-row__link--disabled';
+      linkSpan.setAttribute('aria-hidden', 'true');
+      linkSpan.textContent = 'last.fm';
+      linksDiv.appendChild(linkSpan);
+    }
+    // --- website link insertion point (Task 3 wires this after artist-website batch) ---
+
+    li.appendChild(linksDiv);
+
+    // Inline thumb — set src from raw CDN url (D-08; no proxy-image for plain <img>)
+    const thumb = document.createElement('img');
+    thumb.className = 'text-row__thumb';
+    thumb.alt = '';
+    thumb.width = 48;
+    thumb.height = 48;
+    if (album.imageUrl) thumb.src = album.imageUrl;
+    li.appendChild(thumb);
+
+    return li;
+  }
+
+  async function loadMoreChunk(view: string): Promise<void> {
+    if (loadMoreInFlight) return;
+    loadMoreInFlight = true;
+
+    const listContainer = document.querySelector<HTMLElement>(`.chart-list[data-view="${view}"]`);
+    if (!listContainer) { loadMoreInFlight = false; return; }
+
+    const btn = listContainer.querySelector<HTMLButtonElement>('.chart-list__load-more');
+    const endNote = listContainer.querySelector<HTMLElement>('.chart-list__end-note');
+    const errorRegion = listContainer.querySelector<HTMLElement>('.chart-list__error');
+    const errorMsg = listContainer.querySelector<HTMLElement>('.chart-list__error-msg');
+    const ol = listContainer.querySelector<HTMLOListElement>('.text-list');
+    if (!btn || !endNote || !errorRegion || !ol) { loadMoreInFlight = false; return; }
+
+    // D-15: disabled + loading state while fetching
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = 'Loading…';
+    // Clear any previous inline error (D-16)
+    errorRegion.hidden = true;
+
+    const offset = listOffsets[view] ?? 20;
+    const url = `/api/chart-list?view=${encodeURIComponent(view)}&offset=${offset}&limit=20`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        // D-16: inline error + retry; already-loaded rows stay intact
+        if (errorMsg) errorMsg.textContent = `Failed to load more albums (${res.status}).`;
+        errorRegion.hidden = false;
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        btn.textContent = 'Load more';
+        loadMoreInFlight = false;
+        return;
+      }
+
+      const data = await res.json() as ChartListResponse;
+
+      // Append new rows — T-18-09: only textContent/setAttribute (via createTextRow)
+      for (const row of data.rows) {
+        ol.appendChild(createTextRow(row));
+      }
+
+      // Wire website links for newly appended rows — same batch helper as initial fill (REVL-02)
+      await appendWebsiteLinks(ol, data.rows);
+
+      // Advance offset by actual rows appended (D-03)
+      listOffsets[view] = offset + data.rows.length;
+
+      // D-04/D-15: exhausted check
+      if (!data.hasMore || data.rows.length < 20) {
+        btn.hidden = true;
+        endNote.hidden = false;
+      } else {
+        // Re-enable for next click
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        btn.textContent = 'Load more';
+      }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      // D-16: show inline error; keep loaded rows; retry refetches same offset
+      if (errorMsg) {
+        errorMsg.textContent = (err instanceof Error && err.name === 'AbortError')
+          ? 'Request timed out.'
+          : 'Failed to load more albums.';
+      }
+      errorRegion.hidden = false;
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+      btn.textContent = 'Load more';
+    } finally {
+      loadMoreInFlight = false;
+    }
+  }
+
+  // Attach Load-more and Retry click handlers for each chart-list container.
+  // Each container's buttons route to that container's OWN view (D-12 tab-ready),
+  // not the global activeViewName — a saved non-albums tab must not dead-end the
+  // albums Load-more (CR-01). Today only the albums list exists.
+  document.querySelectorAll<HTMLElement>('.chart-list[data-view]').forEach((container) => {
+    const view = container.dataset.view;
+    if (!view) return;
+
+    const loadMoreBtn = container.querySelector<HTMLButtonElement>('.chart-list__load-more');
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener('click', () => {
+        loadMoreChunk(view);
+      });
+    }
+
+    // Wire retry button once at init — T-18-11: refetches the SAME offset (no advance)
+    const retryBtn = container.querySelector<HTMLButtonElement>('.chart-list__retry');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', () => {
+        loadMoreChunk(view);
+      });
+    }
+  });
+
+  // ---- Text-reveal engine (Phase 19 — REVL-03/04/05/06) ----
+  // Cursor-anchored floating cover-art overlay on hover-capable devices. Event delegation
+  // via rAF + elementFromPoint so load-more rows reveal without per-row re-binding (D-07).
+  // Reduced-motion: short-circuit — overlay never created, no listeners attached (REVL-06).
+  // No-hover (touch): short-circuit — inline 48px thumb handles art reveal (REVL-04).
+  (() => {
+    const list = document.querySelector<HTMLOListElement>(
+      '.chart-list[data-view="albums"] .text-list'
+    );
+    if (!list) return;
+
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+    if (reduced || !canHover) {
+      // Reduced motion → CSS :hover fallback covers row text-color shift.
+      // No-hover (touch) → inline thumb in markup handles art reveal.
+      return;
+    }
+
+    const overlay = document.createElement('img');
+    overlay.className = 'text-reveal-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.alt = '';
+    document.body.appendChild(overlay);
+
+    let lastX = 0;
+    let lastY = 0;
+    let ticking = false;
+    let activeRow: HTMLLIElement | null = null;
+    let focusedRow: HTMLLIElement | null = null;
+    let currentSrc = '';
+
+    const OVERLAY_SIZE = 320;
+    const OVERLAY_OFFSET_X = 24;
+    const OVERLAY_OFFSET_Y = -280;
+    const EDGE_PADDING = 16;
+
+    function findCursorRow(): HTMLLIElement | null {
+      const el = document.elementFromPoint(lastX, lastY) as HTMLElement | null;
+      if (!el) return null;
+      const row = el.closest('.text-row') as HTMLLIElement | null;
+      return row && list?.contains(row) ? row : null;
+    }
+
+    function setActive(row: HTMLLIElement | null): void {
+      if (row === activeRow) return;
+      if (activeRow) activeRow.removeAttribute('data-active');
+      activeRow = row;
+      if (row) row.setAttribute('data-active', 'true');
+
+      // Update overlay src/visibility
+      const img = row?.dataset.image ?? '';
+      if (img && img !== currentSrc) {
+        overlay.src = img;
+        currentSrc = img;
+      }
+      if (row && img) {
+        overlay.setAttribute('data-visible', 'true');
+      } else {
+        overlay.removeAttribute('data-visible');
+      }
+    }
+
+    function positionOverlay(): void {
+      if (!activeRow) return;
+      let x: number;
+      let y: number;
+      if (focusedRow) {
+        // Fixed top-right for focus-driven reveal (no cursor to anchor to)
+        x = window.innerWidth - OVERLAY_SIZE - 24;
+        y = 24;
+      } else {
+        // Cursor-anchored with right + up offset, clamped to viewport
+        const rawX = lastX + OVERLAY_OFFSET_X;
+        const rawY = lastY + OVERLAY_OFFSET_Y;
+        const maxX = window.innerWidth - OVERLAY_SIZE - EDGE_PADDING;
+        const maxY = window.innerHeight - OVERLAY_SIZE - EDGE_PADDING;
+        x = Math.max(EDGE_PADDING, Math.min(maxX, rawX));
+        y = Math.max(EDGE_PADDING, Math.min(maxY, rawY));
+      }
+      overlay.style.transform = `translate(${x}px, ${y}px)`;
+    }
+
+    function update(): void {
+      ticking = false;
+      const target = focusedRow ?? findCursorRow();
+      setActive(target);
+      positionOverlay();
+    }
+
+    function schedule(): void {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(update);
+      }
+    }
+
+    function onMouseMove(e: MouseEvent): void {
+      lastX = e.clientX;
+      lastY = e.clientY;
+      schedule();
+    }
+
+    function onScroll(): void {
+      schedule();
+    }
+
+    function onMouseLeave(): void {
+      if (focusedRow) return; // keep focus state visible even if cursor leaves
+      setActive(null);
+    }
+
+    function onFocusIn(e: FocusEvent): void {
+      const target = e.target as HTMLElement | null;
+      const link = target?.closest('.text-row__link') as HTMLAnchorElement | null;
+      if (!link) return;
+      const row = link.closest('.text-row') as HTMLLIElement | null;
+      if (row && list?.contains(row)) {
+        focusedRow = row;
+        schedule();
+      }
+    }
+
+    function onFocusOut(e: FocusEvent): void {
+      const next = e.relatedTarget as HTMLElement | null;
+      if (next && next.closest('.text-row__link')) {
+        // Focus moving to another link in the list — let focusin handle it
+        return;
+      }
+      focusedRow = null;
+      setActive(null);
+    }
+
+    list.addEventListener('mousemove', onMouseMove, { passive: true });
+    document.addEventListener('scroll', onScroll, { passive: true });
+    list.addEventListener('mouseleave', onMouseLeave);
+    list.addEventListener('focusin', onFocusIn);
+    list.addEventListener('focusout', onFocusOut);
+  })();
+
+  // ---- Lazy image shimmer removal ----
+  document.querySelectorAll<HTMLImageElement>('.chart__tile img[loading="lazy"]').forEach(img => {
+    const tile = img.closest('.chart__tile');
+    if (!tile) return;
+    if (img.complete) {
+      tile.classList.remove('chart__shimmer');
+    } else {
+      img.addEventListener('load', () => {
+        tile.classList.remove('chart__shimmer');
+      }, { once: true });
+    }
+  });
+
+  document.querySelectorAll<HTMLImageElement>('.chart__thumb-wrap img[loading="lazy"]').forEach(img => {
+    const wrap = img.closest('.chart__thumb-wrap');
+    if (!wrap) return;
+    if (img.complete) {
+      wrap.classList.remove('chart__shimmer');
+    } else {
+      img.addEventListener('load', () => {
+        wrap.classList.remove('chart__shimmer');
+      }, { once: true });
+    }
+  });
+
+  // ---- Card thumb shimmer removal ----
+  document.querySelectorAll<HTMLImageElement>('.chart__card-thumb img[loading="lazy"]').forEach(img => {
+    const thumb = img.closest<HTMLElement>('.chart__card-thumb');
+    if (!thumb) return;
+    const card = thumb.closest<HTMLElement>('.chart__card');
+    const clear = () => {
+      thumb.classList.remove('chart__shimmer');
+      card?.classList.remove('chart__shimmer');
+    };
+    if (img.complete) {
+      clear();
+    } else {
+      img.addEventListener('load', clear, { once: true });
+    }
+  });
+</script>
