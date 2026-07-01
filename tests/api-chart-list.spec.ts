@@ -5,6 +5,13 @@ import { test, expect } from '@playwright/test';
 // These run against the dev server with KV bound (same pattern as api-resolve-listen.spec.ts).
 // The cold-cache self-heal (D-09) fires on the first request and populates the KV cache.
 
+// The endpoint needs live Last.fm credentials (LASTFM_API_KEY/USERNAME from
+// .dev.vars) to return 200; CI has no secrets, so it 503s. Skip there per STC-33
+// ("skip chart-data tests in CI"); they still run locally with .dev.vars present.
+test.beforeEach(() => {
+  test.skip(!!process.env.CI, 'chart-list requires Last.fm credentials, unavailable in CI (STC-33)');
+});
+
 test('chart-list default request returns 200 with expected JSON shape', async ({ request }) => {
   const res = await request.get('/api/chart-list');
   expect(res.status()).toBe(200);

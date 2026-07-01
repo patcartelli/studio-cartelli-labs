@@ -408,6 +408,10 @@ const M3_VIEWPORTS = [
 
 for (const vp of M3_VIEWPORTS) {
   test(`a11y: /lab/chart has zero axe violations at ${vp.name} (${vp.width}px)`, async ({ browser }) => {
+    // Mocks /api/chart-data but the text-list view is fed by the live /api/chart-list
+    // (Last.fm), which 503s in CI -> dataless skeleton trips axe on placeholders.
+    // Skip in CI per STC-33; runs locally where chart-list returns real data.
+    test.skip(!!process.env.CI, 'chart list view needs Last.fm data, unavailable in CI (STC-33)');
     const context = await browser.newContext({
       viewport: { width: vp.width, height: vp.height },
       reducedMotion: 'reduce',

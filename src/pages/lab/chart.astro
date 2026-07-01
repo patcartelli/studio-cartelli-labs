@@ -404,10 +404,12 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     <h2 class="chart-list-section__heading">Weekly albums</h2>
     <div class="chart-list" data-view="albums">
       <ol class="text-list" role="list">
-        {Array.from({ length: 20 }).map((_, i) => (
+        {Array.from({ length: 20 }).map(() => (
           <li class="text-row" data-image="">
             <div class="text-row__primary">
-              <span class="text-row__rank" aria-label={`Rank ${i + 1}`}></span>
+              {/* Empty skeleton rank — JS sets textContent on load. No aria-label:
+                  it's prohibited on a roleless empty span (axe aria-prohibited-attr). */}
+              <span class="text-row__rank"></span>
               <span class="text-row__sep" aria-hidden="true">|</span>
               <span class="text-row__album"></span>
               <span class="text-row__sep" aria-hidden="true">—</span>
