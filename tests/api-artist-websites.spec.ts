@@ -29,12 +29,16 @@ test('artist-websites POST returns each artist name as key in result', async ({ 
   // Keys must be present for every requested artist name (value may be null on cache miss)
   expect(body).toHaveProperty('Radiohead');
   expect(body).toHaveProperty('Portishead');
-  // Values are string URLs or null — never undefined, never false
+  // Values are { websiteUrl, imageUrl } objects — never undefined, never a bare string/null
   for (const value of Object.values(body)) {
-    expect(value === null || typeof value === 'string').toBe(true);
-    if (typeof value === 'string') {
-      expect(value).toMatch(/^https?:\/\//);
+    expect(typeof value).toBe('object');
+    expect(value).not.toBeNull();
+    const entry = value as { websiteUrl: string | null; imageUrl: string | null };
+    expect(entry.websiteUrl === null || typeof entry.websiteUrl === 'string').toBe(true);
+    if (typeof entry.websiteUrl === 'string') {
+      expect(entry.websiteUrl).toMatch(/^https?:\/\//);
     }
+    expect(entry.imageUrl === null || typeof entry.imageUrl === 'string').toBe(true);
   }
 });
 
@@ -84,8 +88,9 @@ test('artist-websites result values are never last.fm host URLs (D-03 filter)', 
   expect(res.status()).toBe(200);
   const body = await res.json();
   for (const value of Object.values(body)) {
-    if (typeof value === 'string') {
-      expect(LASTFM_HOST_RE.test(value)).toBe(false);
+    const entry = value as { websiteUrl: string | null; imageUrl: string | null };
+    if (typeof entry.websiteUrl === 'string') {
+      expect(LASTFM_HOST_RE.test(entry.websiteUrl)).toBe(false);
     }
   }
 });
@@ -101,8 +106,9 @@ test('artist-websites unknown artist returns null (cache miss -> null, no MB cal
   expect(res.status()).toBe(200);
   const body = await res.json();
   expect(body).toHaveProperty('ZZZZZ_nonexistent_artist_ZZZZZ');
-  // Must be null — no MB call made, pure cache miss
-  expect(body['ZZZZZ_nonexistent_artist_ZZZZZ']).toBeNull();
+  // Both fields must be null — no MB call made, pure cache miss
+  expect(body['ZZZZZ_nonexistent_artist_ZZZZZ'].websiteUrl).toBeNull();
+  expect(body['ZZZZZ_nonexistent_artist_ZZZZZ'].imageUrl).toBeNull();
 });
 
 // --- Response headers --- //
