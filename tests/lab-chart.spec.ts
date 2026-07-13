@@ -354,6 +354,219 @@ test('shimmer elements have animation when motion is allowed', async ({ browser 
 });
 
 // ============================================================
+// Phase 22 Plan 04: LIST-05/06/07 regression coverage — list-container switching,
+// the artists no-thumbnail rule (Pitfall 2), and D-04 no-refetch persistence.
+// Mocks **/api/chart-list** with a small deterministic payload keyed off the request's
+// `view` param so these tests are CI-runnable (no live Last.fm creds). Reveal-overlay,
+// touch-thumbnail, keyboard-reveal, reduced-motion, and axe coverage for the new lists
+// are REVL-10 / Phase 23 scope — intentionally NOT added here.
+// ============================================================
+
+function mockChartListRoute(page: import('@playwright/test').Page, onRequest?: (view: string) => void) {
+  return page.route('**/api/chart-list**', async route => {
+    const url = new URL(route.request().url());
+    const view = url.searchParams.get('view') ?? 'albums';
+    onRequest?.(view);
+
+    let rows: Record<string, unknown>[];
+    if (view === 'artists') {
+      rows = [
+        { rank: 1, name: 'Mock Artist 1', playcount: 100, url: 'https://www.last.fm/music/Mock+Artist+1' },
+        { rank: 2, name: 'Mock Artist 2', playcount: 90, url: 'https://www.last.fm/music/Mock+Artist+2' },
+      ];
+    } else if (view === 'tracks') {
+      rows = [
+        { rank: 1, name: 'Mock Track 1', artist: 'Mock Artist', playcount: 80, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', url: 'https://www.last.fm/music/Mock+Artist/_/Mock+Track+1' },
+        { rank: 2, name: 'Mock Track 2', artist: 'Mock Artist', playcount: 70, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', url: 'https://www.last.fm/music/Mock+Artist/_/Mock+Track+2' },
+      ];
+    } else {
+      rows = [
+        { rank: 1, name: 'Mock Album 1', artist: 'Mock Artist', playcount: 60, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', url: 'https://www.last.fm/music/Mock+Artist/Mock+Album+1' },
+        { rank: 2, name: 'Mock Album 2', artist: 'Mock Artist', playcount: 50, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', url: 'https://www.last.fm/music/Mock+Artist/Mock+Album+2' },
+      ];
+    }
+
+    await route.fulfill({
+      json: { view, rows, offset: 0, limit: 20, total: rows.length, hasMore: false },
+    });
+  });
+}
+
+test('switching to artists shows the artists list container and hides the others (D-01)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem('chart-view'));
+  await page.route('**/api/chart-data**', async route =>
+    route.fulfill({ json: chartDataFixture })
+  );
+  await mockChartListRoute(page);
+  await page.goto('/lab/chart');
+  // WR-05: surface SSR-unavailable environments as skipped (yellow), not silently
+  // passed (green) — matches the Phase-14 cascade tests' in-file standard.
+  test.skip(
+    !await page.locator('.chart__view-links').isVisible().catch(() => false),
+    'SSR data unavailable in this environment'
+  );
+
+  await page.locator('.chart__view-link[data-for="artists"]').click();
+
+  await expect(page.locator('.chart-list[data-view="artists"]')).toBeVisible();
+  await expect(page.locator('.chart-list[data-view="albums"]')).not.toBeVisible();
+  await expect(page.locator('.chart-list[data-view="tracks"]')).not.toBeVisible();
+});
+
+test('switching to tracks shows the tracks list container and hides the others (D-01)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem('chart-view'));
+  await page.route('**/api/chart-data**', async route =>
+    route.fulfill({ json: chartDataFixture })
+  );
+  await mockChartListRoute(page);
+  await page.goto('/lab/chart');
+  // WR-05: surface SSR-unavailable environments as skipped (yellow), not silently
+  // passed (green) — matches the Phase-14 cascade tests' in-file standard.
+  test.skip(
+    !await page.locator('.chart__view-links').isVisible().catch(() => false),
+    'SSR data unavailable in this environment'
+  );
+
+  await page.locator('.chart__view-link[data-for="tracks"]').click();
+
+  await expect(page.locator('.chart-list[data-view="tracks"]')).toBeVisible();
+  await expect(page.locator('.chart-list[data-view="albums"]')).not.toBeVisible();
+  await expect(page.locator('.chart-list[data-view="artists"]')).not.toBeVisible();
+});
+
+test('artists list rows reserve a thumb slot, empty when no cached image (D-01)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem('chart-view'));
+  await page.route('**/api/chart-data**', async route =>
+    route.fulfill({ json: chartDataFixture })
+  );
+  await mockChartListRoute(page);
+  await page.goto('/lab/chart');
+  // WR-05: surface SSR-unavailable environments as skipped (yellow), not silently
+  // passed (green) — matches the Phase-14 cascade tests' in-file standard.
+  test.skip(
+    !await page.locator('.chart__view-links').isVisible().catch(() => false),
+    'SSR data unavailable in this environment'
+  );
+
+  await page.locator('.chart__view-link[data-for="artists"]').click();
+  await expect(page.locator('.chart-list[data-view="artists"]')).toBeVisible();
+
+  // Wait for the mocked fetch to resolve and fill the rows before asserting the reserved slot.
+  const rows = page.locator('.chart-list[data-view="artists"] .text-row');
+  await expect(rows.first()).toHaveAttribute('data-image', '');
+  // Every row reserves exactly one thumb slot (D-01); src stays unset until the
+  // batch resolve (Plan 03) fills it in — no text-only variant (reverses Phase 22's
+  // "zero thumbnails" guard, Pitfall 2).
+  await expect(rows.locator('.text-row__thumb')).toHaveCount(await rows.count());
+});
+
+test('switching back to an already-loaded view does not refetch (D-04)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem('chart-view'));
+  await page.route('**/api/chart-data**', async route =>
+    route.fulfill({ json: chartDataFixture })
+  );
+  let artistsRequestCount = 0;
+  await mockChartListRoute(page, (view) => {
+    if (view === 'artists') artistsRequestCount++;
+  });
+  await page.goto('/lab/chart');
+  // WR-05: surface SSR-unavailable environments as skipped (yellow), not silently
+  // passed (green) — matches the Phase-14 cascade tests' in-file standard.
+  test.skip(
+    !await page.locator('.chart__view-links').isVisible().catch(() => false),
+    'SSR data unavailable in this environment'
+  );
+
+  // albums -> artists -> tracks -> artists
+  await page.locator('.chart__view-link[data-for="artists"]').click();
+  await expect(page.locator('.chart-list[data-view="artists"] .text-row').first()).toHaveAttribute('data-image', '');
+  expect(artistsRequestCount).toBe(1);
+
+  await page.locator('.chart__view-link[data-for="tracks"]').click();
+  await expect(page.locator('.chart-list[data-view="tracks"]')).toBeVisible();
+
+  await page.locator('.chart__view-link[data-for="artists"]').click();
+  await expect(page.locator('.chart-list[data-view="artists"]')).toBeVisible();
+
+  // Re-activating an already-loaded view must not trigger a second fetch (loadedViews persists).
+  expect(artistsRequestCount).toBe(1);
+});
+
+// ============================================================
+// Phase 23 Plan 04: D-07 — initial-load-error retry-contract test (deferred from Phase 22).
+// A mutable `attempt` counter fails the FIRST /api/chart-list?view=artists fetch (503),
+// then succeeds on the next; asserts the "Failed to load artists." + Retry UI-SPEC contract,
+// then re-verifies WR-02's no-refetch persistence (switching away and back must not issue
+// a third fetch — one failure + one successful retry, never more).
+// ============================================================
+
+test('D-07: initial-load error shows Retry, recovers, and does not refetch on re-switch', async ({ page }) => {
+  await page.addInitScript(() => localStorage.removeItem('chart-view'));
+  await page.route('**/api/chart-data**', async route =>
+    route.fulfill({ json: chartDataFixture })
+  );
+
+  let attempt = 0;
+  const artistsRows = Array.from({ length: 20 }, (_, i) => ({
+    rank: i + 1,
+    name: `Mock Artist ${i + 1}`,
+    playcount: 100 - i,
+    url: `https://www.last.fm/music/Mock+Artist+${i + 1}`,
+  }));
+
+  await page.route('**/api/chart-list*', async route => {
+    const url = new URL(route.request().url());
+    const view = url.searchParams.get('view') ?? 'albums';
+    if (view !== 'artists') {
+      await route.continue();
+      return;
+    }
+    attempt++;
+    if (attempt === 1) {
+      await route.fulfill({ status: 503 });
+      return;
+    }
+    await route.fulfill({
+      json: { view: 'artists', rows: artistsRows, offset: 0, limit: 20, total: artistsRows.length, hasMore: false },
+    });
+  });
+
+  // Empty object is safe under the { websiteUrl, imageUrl } shape — websites[name] is
+  // undefined, undefined?.websiteUrl is falsy, so appendArtistExtras omits gracefully.
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
+
+  await page.goto('/lab/chart');
+  // WR-05: surface SSR-unavailable environments as skipped (yellow), not silently
+  // passed (green) — matches the Phase-14 cascade tests' in-file standard.
+  test.skip(
+    !await page.locator('.chart__view-links').isVisible().catch(() => false),
+    'SSR data unavailable in this environment'
+  );
+
+  await page.locator('.chart__view-link[data-for="artists"]').click();
+
+  const errorRegion = page.locator('.chart-list[data-view="artists"] .chart-list__error');
+  const errorMsg = page.locator('.chart-list[data-view="artists"] .chart-list__error-msg');
+  await expect(errorRegion).toBeVisible();
+  await expect(errorMsg).toHaveText('Failed to load artists.');
+
+  await page.locator('.chart-list[data-view="artists"] .chart-list__retry').click();
+
+  await expect(errorRegion).not.toBeVisible();
+  const rows = page.locator('.chart-list[data-view="artists"] .text-row');
+  await expect(rows).toHaveCount(20);
+
+  // Switch away and back — re-activating an already-loaded view must not refetch
+  // (WR-02 no-refetch contract): exactly one failure + one successful retry, never a third.
+  await page.locator('.chart__view-link[data-for="tracks"]').click();
+  await expect(page.locator('.chart-list[data-view="tracks"]')).toBeVisible();
+  await page.locator('.chart__view-link[data-for="artists"]').click();
+  await expect(page.locator('.chart-list[data-view="artists"]')).toBeVisible();
+
+  expect(attempt).toBe(2);
+});
+
+// ============================================================
 // Phase 18: Axe zero-violation tests at M3 viewport boundaries
 // (Compact=375, Medium=768, Expanded floor=840) — per D-01.
 // browser.newContext() pattern from shimmer test above (Pitfall 1: absolute URL required).

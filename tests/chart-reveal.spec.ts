@@ -30,9 +30,10 @@ const chartListFixture = {
 };
 
 // Artist websites fixture: "Artist With Website" maps to a real url, "Artist Without Website" maps to null.
-const artistWebsitesFixture: Record<string, string | null> = {
-  'Artist With Website': 'https://artistwithwebsite.example.com',
-  'Artist Without Website': null,
+// Phase 23: reshaped to the combined { websiteUrl, imageUrl } response contract (Pitfall 1).
+const artistWebsitesFixture: Record<string, { websiteUrl: string | null; imageUrl: string | null }> = {
+  'Artist With Website': { websiteUrl: 'https://artistwithwebsite.example.com', imageUrl: null },
+  'Artist Without Website': { websiteUrl: null, imageUrl: null },
 };
 
 // Also mock /api/chart-data so SSR grid fills without 500 errors (returns minimal valid shape)

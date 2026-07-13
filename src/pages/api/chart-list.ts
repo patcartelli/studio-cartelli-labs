@@ -1,17 +1,20 @@
 // src/pages/api/chart-list.ts
-// Lightweight offset/limit slice endpoint over the full-chart cache (Plan 18-02).
-// Reads from getFullChartAlbums — rows carry a raw Last.fm url permalink but NO MusicBrainz,
-// glow, or Odesli enrichment (LIST-04 intact; url is a raw getTopAlbums field, not enrichment).
-// On a cold cache, the helper lazily fills it via one Last.fm call (D-09).
+// Lightweight offset/limit slice endpoint over the full-chart cache (Plan 18-02; view dispatch v1.16).
+// Dispatches on a whitelisted `view` param to getFullChartAlbums/getFullChartArtists/getFullChartTracks —
+// rows carry a raw Last.fm url permalink but NO MusicBrainz, glow, or Odesli enrichment (LIST-04 intact).
+// On a cold cache, each getter lazily self-heals via one Last.fm call (D-09).
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { getFullChartAlbums } from '../../lib/fullchart-cache';
+import { getFullChartAlbums, getFullChartArtists, getFullChartTracks } from '../../lib/fullchart-cache';
 import type { PipelineEnv } from '../../lib/chart-pipeline';
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
+
+const VALID_VIEWS = ['albums', 'artists', 'tracks'] as const;
+type ChartView = typeof VALID_VIEWS[number];
 
 // ---------- handler ----------
 export const GET: APIRoute = async ({ request }) => {
@@ -26,8 +29,11 @@ export const GET: APIRoute = async ({ request }) => {
 
   const url = new URL(request.url);
 
-  // view: albums-only this phase (D-01); echo in response for D-12 tab-readiness
-  const view = url.searchParams.get('view') ?? 'albums';
+  // view: whitelisted against VALID_VIEWS; unknown/malformed values fall back to albums (T-22-01)
+  const requestedView = url.searchParams.get('view') ?? 'albums';
+  const view: ChartView = (VALID_VIEWS as readonly string[]).includes(requestedView)
+    ? (requestedView as ChartView)
+    : 'albums';
 
   // T-18-04: clamp offset and limit — resource-abuse guard
   const rawOffset = Number.parseInt(url.searchParams.get('offset') ?? '', 10);
@@ -39,7 +45,10 @@ export const GET: APIRoute = async ({ request }) => {
 
   try {
     // D-09: helper self-heals a cold cache via one lightweight Last.fm call
-    const { data: allRows } = await getFullChartAlbums(fullEnv.LASTFM_CHART_CACHE, fullEnv);
+    const { data: allRows } =
+      view === 'artists' ? await getFullChartArtists(fullEnv.LASTFM_CHART_CACHE, fullEnv) :
+      view === 'tracks'  ? await getFullChartTracks(fullEnv.LASTFM_CHART_CACHE, fullEnv) :
+                            await getFullChartAlbums(fullEnv.LASTFM_CHART_CACHE, fullEnv);
 
     const total = allRows.length;
     const rows = allRows.slice(offset, offset + limit);

@@ -63,3 +63,55 @@ test('chart-list rows carry lightweight fields including url (no listenUrl or gl
     expect(row).not.toHaveProperty('glowColor');
   }
 });
+
+// Phase 22 Plan 04 — LIST-06/LIST-07 endpoint-shape regression coverage.
+
+test('chart-list view=artists returns artist-shaped rows (no imageUrl, no artist, no enrichment)', async ({ request }) => {
+  const res = await request.get('/api/chart-list?view=artists');
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  expect(body.view).toBe('artists');
+  expect(Array.isArray(body.rows)).toBe(true);
+  // Only assert row shape when there are rows returned (live data may vary in CI)
+  if (body.rows.length > 0) {
+    const row = body.rows[0];
+    expect(row).toHaveProperty('rank');
+    expect(row).toHaveProperty('name');
+    expect(row).toHaveProperty('playcount');
+    expect(row).toHaveProperty('url');
+    // Artists have no imageUrl and no separate artist field (D-10)
+    expect(row).not.toHaveProperty('imageUrl');
+    expect(row).not.toHaveProperty('artist');
+    // Enrichment-free guard (LIST-04 safeguard extended to the new view)
+    expect(row).not.toHaveProperty('listenUrl');
+    expect(row).not.toHaveProperty('glowColor');
+  }
+});
+
+test('chart-list view=tracks returns track-shaped rows (rank/name/artist/playcount/imageUrl/url)', async ({ request }) => {
+  const res = await request.get('/api/chart-list?view=tracks');
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  expect(body.view).toBe('tracks');
+  expect(Array.isArray(body.rows)).toBe(true);
+  // Only assert row shape when there are rows returned (live data may vary in CI)
+  if (body.rows.length > 0) {
+    const row = body.rows[0];
+    expect(row).toHaveProperty('rank');
+    expect(row).toHaveProperty('name');
+    expect(row).toHaveProperty('artist');
+    expect(row).toHaveProperty('playcount');
+    expect(row).toHaveProperty('imageUrl');
+    expect(row).toHaveProperty('url');
+    // Enrichment-free guard (LIST-04 safeguard extended to the new view)
+    expect(row).not.toHaveProperty('listenUrl');
+    expect(row).not.toHaveProperty('glowColor');
+  }
+});
+
+test('chart-list unknown view=bogus falls back to albums (Claude\'s-discretion A1: graceful fallback, not a 400)', async ({ request }) => {
+  const res = await request.get('/api/chart-list?view=bogus');
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  expect(body.view).toBe('albums');
+});

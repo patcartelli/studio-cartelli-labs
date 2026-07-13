@@ -208,8 +208,8 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
   </section>
 
   <section class="chart-list-section container">
-    <h2 class="chart-list-section__heading">Weekly albums</h2>
     <div class="chart-list" data-view="albums">
+      <h2 class="chart-list-section__heading">Weekly albums</h2>
       <ol class="text-list" role="list">
         {Array.from({ length: 20 }).map(() => (
           <li class="text-row" data-image="">
@@ -234,10 +234,86 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
         ))}
       </ol>
       <div class="chart-list__controls">
-        <button class="chart-list__load-more" type="button" aria-label="Load more albums">Load more</button>
+        {/* WR-02: starts disabled — enabled by the albums initial-fill IIFE on success,
+            mirroring the artists/tracks pattern. Otherwise a click during the pending
+            initial fetch appends ranks 21–40, which fillTextList's surplus-skeleton
+            removal then deletes while the offset has already advanced past them. */}
+        <button class="chart-list__load-more" type="button" aria-label="Load more albums" disabled>Load more</button>
         <p class="chart-list__end-note" hidden>That's everything — you've reached the end of this week's chart.</p>
         <div class="chart-list__error" role="alert" hidden>
           <span class="chart-list__error-msg">Failed to load more albums.</span>
+          <button class="chart-list__retry" type="button">Retry</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chart-list" data-view="artists" style="display:none">
+      <h2 class="chart-list-section__heading">Weekly artists</h2>
+      <ol class="text-list" role="list">
+        {Array.from({ length: 20 }).map(() => (
+          <li class="text-row" data-image="">
+            <div class="text-row__primary">
+              {/* Empty skeleton rank — JS sets textContent on load. No aria-label:
+                  it's prohibited on a roleless empty span (axe aria-prohibited-attr). */}
+              <span class="text-row__rank"></span>
+              <span class="text-row__sep" aria-hidden="true">|</span>
+              <span class="text-row__name"></span>
+            </div>
+            <div class="text-row__plays-group">
+              <span class="text-row__plays-label">Plays</span>
+              <span class="text-row__plays"></span>
+            </div>
+            <div class="text-row__links">
+              <span class="text-row__link text-row__link--disabled" aria-hidden="true">last.fm</span>
+            </div>
+            <img class="text-row__thumb" alt="" width="48" height="48" />
+          </li>
+        ))}
+      </ol>
+      <div class="chart-list__controls">
+        {/* WR-01: starts disabled — enabled by loadInitialListData on a successful initial
+            fill, so Load more is never actionable while rows 1–20 don't exist yet. */}
+        <button class="chart-list__load-more" type="button" aria-label="Load more artists" disabled>Load more</button>
+        <p class="chart-list__end-note" hidden>That's everything — you've reached the end of this week's chart.</p>
+        <div class="chart-list__error" role="alert" hidden>
+          <span class="chart-list__error-msg">Failed to load more artists.</span>
+          <button class="chart-list__retry" type="button">Retry</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chart-list" data-view="tracks" style="display:none">
+      <h2 class="chart-list-section__heading">Weekly tracks</h2>
+      <ol class="text-list" role="list">
+        {Array.from({ length: 20 }).map(() => (
+          <li class="text-row" data-image="">
+            <div class="text-row__primary">
+              {/* Empty skeleton rank — JS sets textContent on load. No aria-label:
+                  it's prohibited on a roleless empty span (axe aria-prohibited-attr). */}
+              <span class="text-row__rank"></span>
+              <span class="text-row__sep" aria-hidden="true">|</span>
+              <span class="text-row__track"></span>
+              <span class="text-row__sep" aria-hidden="true">—</span>
+              <span class="text-row__artist"></span>
+            </div>
+            <div class="text-row__plays-group">
+              <span class="text-row__plays-label">Plays</span>
+              <span class="text-row__plays"></span>
+            </div>
+            <div class="text-row__links">
+              <span class="text-row__link text-row__link--disabled" aria-hidden="true">last.fm</span>
+            </div>
+            <img class="text-row__thumb" alt="" width="48" height="48" />
+          </li>
+        ))}
+      </ol>
+      <div class="chart-list__controls">
+        {/* WR-01: starts disabled — enabled by loadInitialListData on a successful initial
+            fill, so Load more is never actionable while rows 1–20 don't exist yet. */}
+        <button class="chart-list__load-more" type="button" aria-label="Load more tracks" disabled>Load more</button>
+        <p class="chart-list__end-note" hidden>That's everything — you've reached the end of this week's chart.</p>
+        <div class="chart-list__error" role="alert" hidden>
+          <span class="chart-list__error-msg">Failed to load more tracks.</span>
           <button class="chart-list__retry" type="button">Retry</button>
         </div>
       </div>
@@ -921,6 +997,14 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     color: var(--color-on-surface);
   }
 
+  /* Artist-row name (D-08) and track-row title (D-08) — same focal-point styling as
+     the albums title field, applied via a sibling rule so .text-row__album stays untouched. */
+  .text-row__name,
+  .text-row__track {
+    font-weight: 600;
+    color: var(--color-on-surface);
+  }
+
   .text-row__artist {
     font-weight: 400;
     color: var(--color-on-surface-dimmed);
@@ -995,6 +1079,20 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     border-radius: 2px;
   }
 
+  /* D-04 fade-in — scoped to the ARTISTS view only (CR-01): albums/tracks thumbs
+     receive src synchronously at fill time and must stay immediately visible
+     (pre-Phase-23 behavior unchanged, success criterion 4). Only the artists'
+     reserved slots start transparent; appendArtistExtras sets src and toggles
+     --loaded on the img's native load event to fade the thumb in. */
+  .chart-list[data-view="artists"] .text-row__thumb {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .chart-list[data-view="artists"] .text-row__thumb--loaded {
+    opacity: 1;
+  }
+
   @media (hover: none) {
     .text-row__thumb {
       display: inline-block;
@@ -1011,6 +1109,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     .text-row__plays,
     .text-row__artist,
     .text-row__link,
+    .text-row__thumb,
     :global(.text-reveal-overlay) {
       transition: none !important;
     }
@@ -1103,6 +1202,15 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     font-size: var(--text-body-small);
   }
 
+  /* Rule 1 fix (Phase 23 Plan 04): the `[hidden]` UA style and the class rule above have
+     equal specificity, and author CSS always wins over UA default styles regardless of
+     source order — so `display: flex` above was unconditionally overriding the `hidden`
+     attribute, making the error/Retry UI visibly render on every page load, not just on
+     failure. This restores `hidden` as authoritative. */
+  .chart-list__error[hidden] {
+    display: none;
+  }
+
   .chart-list__error-msg {
     font-family: var(--font-body);
     color: var(--color-on-surface-dimmed);
@@ -1154,7 +1262,30 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
   const copyBtn = document.querySelector<HTMLButtonElement>('.chart__copy-btn');
   const toggleInput = document.querySelector<HTMLInputElement>('.chart__toggle-input');
 
-  let activeViewName = localStorage.getItem(STORAGE_VIEW_KEY) ?? 'albums';
+  // WR-03: validate the persisted view against the whitelist at read time — a stale,
+  // legacy, or hand-edited value would otherwise hide every .chart__view/.chart-list
+  // container AND route the lazy loader into the albums fallback branch, double-running
+  // appendWebsiteLinks against the albums <ol> (duplicate "· website" links).
+  const VALID_VIEWS = ['albums', 'artists', 'tracks'];
+  const storedView = localStorage.getItem(STORAGE_VIEW_KEY);
+  let activeViewName = storedView && VALID_VIEWS.includes(storedView) ? storedView : 'albums';
+
+  // LIST-05/D-02/D-04: albums is eager-filled by the existing initial-fill IIFE below;
+  // artists/tracks lazily fetch on their FIRST activation only (loadInitialListData
+  // is a hoisted `function` declared later in this script — see hoisting note there).
+  const loadedViews = new Set<string>(['albums']);
+
+  // WR-01: views whose INITIAL lazy load has failed. The per-container Retry button is
+  // shared between the initial-load and load-more error paths, so its single init-time
+  // listener dispatches on this set — re-issuing the initial fetch (offset 0) while the
+  // view is marked failed, and only routing back to loadMoreChunk after a success clears it.
+  const initialLoadFailed = new Set<string>();
+
+  // WR-01 (Phase 23 review): per-view in-flight guard for loadInitialListData. A
+  // double-clicked Retry, or switching away and back while a retry is in flight
+  // (loadedViews is only re-added on success), would otherwise run the non-idempotent
+  // batch resolvers concurrently and append duplicate "· website" links.
+  const initialLoadInFlight = new Set<string>();
 
   function getActiveGrid(): HTMLDivElement | null {
     return document.querySelector<HTMLDivElement>(
@@ -1176,6 +1307,19 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     const isArtists = viewName === 'artists';
     if (viewToggleLabel) viewToggleLabel.style.display = isArtists ? 'none' : '';
     if (copyBtn) copyBtn.style.display = isArtists ? 'none' : '';
+
+    // D-01: real per-container list switching, replaces the removed hide-guard —
+    // the Weekly list now follows the active view instead of hiding on non-albums views.
+    document.querySelectorAll<HTMLElement>('.chart-list[data-view]').forEach((container) => {
+      container.style.display = container.dataset.view === viewName ? '' : 'none';
+    });
+
+    // D-02/D-04: lazy fetch on FIRST activation only; re-switching to an already-loaded
+    // view keeps its rows (no refetch, no reset).
+    if (!loadedViews.has(viewName)) {
+      loadedViews.add(viewName);
+      loadInitialListData(viewName);
+    }
 
     // Re-apply labels to active grid
     if (toggleInput && !isArtists) {
@@ -1540,9 +1684,13 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     document.querySelectorAll<HTMLElement>('.chart__tile--artist').forEach(tile => {
       const name = tile.dataset.artist?.toLowerCase() ?? '';
       const a = artistMap.get(name);
-      if (a?.imageUrl) {
+      // WR-07: third-party image URLs (Fanart.tv/Wikimedia/Deezer/TADB via /api/chart-data)
+      // must pass an http(s) scheme check, and JSON.stringify escapes embedded quotes/
+      // backslashes so a crafted value can't break out of the url() token and inject
+      // arbitrary declarations into the inline style.
+      if (a?.imageUrl && /^https?:\/\//i.test(a.imageUrl)) {
         tile.querySelector('.chart__tile-placeholder')?.remove();
-        tile.style.backgroundImage = `url('${a.imageUrl}')`;
+        tile.style.backgroundImage = `url(${JSON.stringify(a.imageUrl)})`;
         tile.classList.add('has-photo');
       }
     });
@@ -1600,8 +1748,9 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       // Fill text via textContent — no innerHTML (T-18-07)
       const rankEl = row.querySelector<HTMLElement>('.text-row__rank');
       if (rankEl) {
+        // WR-04: no aria-label — prohibited on a roleless span (axe aria-prohibited-attr,
+        // see skeleton comment); visible rank text is read in DOM order, matching createTextRow.
         rankEl.textContent = String(album.rank); // full unpadded rank (D-14)
-        rankEl.setAttribute('aria-label', `Rank ${album.rank}`);
       }
 
       const albumEl = row.querySelector<HTMLElement>('.text-row__album');
@@ -1648,6 +1797,267 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     }
   }
 
+  // ---- Artists/tracks view row shapes (LIST-06/LIST-07) ----
+  // Distinct from ChartListRow/ChartListResponse (albums) — artists carry no imageUrl/artist
+  // field (D-06/D-10), tracks mirror the albums shape but keep the field names track/artist.
+  interface ChartListArtistRow {
+    rank: number;
+    name: string;
+    playcount: number;
+    url: string;
+  }
+  interface ChartListTrackRow {
+    rank: number;
+    name: string;
+    artist: string;
+    playcount: number;
+    imageUrl: string;
+    url: string;
+  }
+  interface ChartListArtistResponse {
+    view: string;
+    rows: ChartListArtistRow[];
+    offset: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  }
+  interface ChartListTrackResponse {
+    view: string;
+    rows: ChartListTrackRow[];
+    offset: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  }
+
+  // fillArtistList — sibling fork of fillTextList for the artists view (D-08/D-06/D-01/D-09).
+  // Artist rows carry rank | name, no separate artist field, plus a reserved 48px thumb
+  // slot (D-01) that this function leaves unset — src wiring is Plan 03's batch-resolve scope.
+  function fillArtistList(view: string, artists: ChartListArtistRow[]): void {
+    const ol = document.querySelector<HTMLOListElement>(
+      `.chart-list[data-view="${view}"] .text-list`
+    );
+    if (!ol) return;
+
+    const rows = Array.from(ol.querySelectorAll<HTMLLIElement>('.text-row'));
+
+    // Remove surplus skeleton rows if API returned fewer artists than skeletons
+    if (artists.length < rows.length) {
+      rows.slice(artists.length).forEach(r => r.remove());
+    }
+
+    const count = Math.min(artists.length, rows.length);
+    for (let i = 0; i < count; i++) {
+      const row = rows[i];
+      const artist = artists[i];
+      if (!row || !artist) continue;
+
+      // No imageUrl at initial fill time (D-01/D-02) — the skeleton's reserved thumb
+      // slot stays unset; the batch resolve (Plan 03) fills it in and updates data-image.
+      row.setAttribute('data-image', '');
+
+      const rankEl = row.querySelector<HTMLElement>('.text-row__rank');
+      if (rankEl) {
+        // WR-04: no aria-label — prohibited on a roleless span (axe aria-prohibited-attr,
+        // see skeleton comment); visible rank text is read in DOM order, matching createArtistRow.
+        rankEl.textContent = String(artist.rank);
+      }
+
+      const nameEl = row.querySelector<HTMLElement>('.text-row__name');
+      if (nameEl) {
+        nameEl.textContent = artist.name;
+        nameEl.title = artist.name;
+      }
+
+      const playsEl = row.querySelector<HTMLElement>('.text-row__plays');
+      if (playsEl) {
+        playsEl.textContent = listFormatPlays(artist.playcount);
+      }
+
+      // Wire last.fm link — replace disabled span with real anchor when url present (D-09)
+      const linksDiv = row.querySelector<HTMLElement>('.text-row__links');
+      if (linksDiv && artist.url) {
+        const existingSpan = linksDiv.querySelector('.text-row__link--disabled');
+        if (existingSpan) {
+          const a = document.createElement('a');
+          a.href = artist.url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.className = 'text-row__link';
+          a.setAttribute('aria-label', `Listen to ${artist.name} on last.fm`);
+          a.textContent = 'last.fm';
+          existingSpan.replaceWith(a);
+        }
+      }
+      // The skeleton's reserved <img class="text-row__thumb"> slot (D-01) stays unset
+      // here — src/--loaded wiring is Plan 03's batch-resolve scope.
+    }
+  }
+
+  // fillTrackList — sibling fork of fillTextList for the tracks view (D-08/D-10/D-09).
+  // Track rows carry rank | title — artist, plus the 48px thumb (D-10: tracks DO get a thumb).
+  function fillTrackList(view: string, tracks: ChartListTrackRow[]): void {
+    const ol = document.querySelector<HTMLOListElement>(
+      `.chart-list[data-view="${view}"] .text-list`
+    );
+    if (!ol) return;
+
+    const rows = Array.from(ol.querySelectorAll<HTMLLIElement>('.text-row'));
+
+    // Remove surplus skeleton rows if API returned fewer tracks than skeletons
+    if (tracks.length < rows.length) {
+      rows.slice(tracks.length).forEach(r => r.remove());
+    }
+
+    const count = Math.min(tracks.length, rows.length);
+    for (let i = 0; i < count; i++) {
+      const row = rows[i];
+      const track = tracks[i];
+      if (!row || !track) continue;
+
+      row.setAttribute('data-image', track.imageUrl ?? '');
+
+      const rankEl = row.querySelector<HTMLElement>('.text-row__rank');
+      if (rankEl) {
+        // WR-04: no aria-label — prohibited on a roleless span (axe aria-prohibited-attr,
+        // see skeleton comment); visible rank text is read in DOM order, matching createTrackRow.
+        rankEl.textContent = String(track.rank);
+      }
+
+      const titleEl = row.querySelector<HTMLElement>('.text-row__track');
+      if (titleEl) {
+        titleEl.textContent = track.name;
+        titleEl.title = track.name;
+      }
+
+      const artistEl = row.querySelector<HTMLElement>('.text-row__artist');
+      if (artistEl) {
+        artistEl.textContent = track.artist;
+        artistEl.title = track.artist;
+      }
+
+      const playsEl = row.querySelector<HTMLElement>('.text-row__plays');
+      if (playsEl) {
+        playsEl.textContent = listFormatPlays(track.playcount);
+      }
+
+      // Wire last.fm link — replace disabled span with real anchor when url present (D-09)
+      const linksDiv = row.querySelector<HTMLElement>('.text-row__links');
+      if (linksDiv && track.url) {
+        const existingSpan = linksDiv.querySelector('.text-row__link--disabled');
+        if (existingSpan) {
+          const a = document.createElement('a');
+          a.href = track.url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.className = 'text-row__link';
+          a.setAttribute('aria-label', `Listen to ${track.name} by ${track.artist} on last.fm`);
+          a.textContent = 'last.fm';
+          existingSpan.replaceWith(a);
+        }
+      }
+
+      // Set thumb src from raw CDN url (D-10) — tracks DO carry a thumbnail
+      if (track.imageUrl) {
+        const thumb = row.querySelector<HTMLImageElement>('.text-row__thumb');
+        if (thumb) thumb.src = track.imageUrl;
+      }
+    }
+  }
+
+  // loadInitialListData — CRITICAL: must be a hoisted `function` declaration, never
+  // `const loadInitialListData = () => {}`. activateView() runs synchronously near the top
+  // of this script and calls this function on first activation of a view — long before this
+  // declaration is reached in file source order. An arrow-function const would be `undefined`
+  // at that first call and throw a ReferenceError/TypeError (see PATTERNS.md hoisting trap).
+  //
+  // Mirrors the shape of the albums initial-fill IIFE below, parameterized by view (D-02/D-03).
+  // Albums keeps its shipped silent-fallback behavior unchanged (success criterion 4) — only
+  // the artists/tracks branches surface the container's error block on failure, per the
+  // UI-SPEC initial-load error-state contract, and remove the view from loadedViews so a
+  // later re-activation can retry.
+  function loadInitialListData(view: string): void {
+    // WR-01: single-flight per view — concurrent invocations (double-clicked Retry,
+    // re-activation during an in-flight retry) must not double-run the batch resolvers.
+    if (initialLoadInFlight.has(view)) return;
+    initialLoadInFlight.add(view);
+
+    const listContainer = document.querySelector<HTMLElement>(`.chart-list[data-view="${view}"]`);
+    const errorRegion = listContainer?.querySelector<HTMLElement>('.chart-list__error') ?? null;
+    const errorMsg = listContainer?.querySelector<HTMLElement>('.chart-list__error-msg') ?? null;
+    const loadMoreBtn = listContainer?.querySelector<HTMLButtonElement>('.chart-list__load-more') ?? null;
+    const noun = view === 'artists' ? 'artists' : view === 'tracks' ? 'tracks' : 'albums';
+
+    function showInitialLoadError(): void {
+      loadedViews.delete(view); // allow a later re-activation of this view to retry
+      initialLoadFailed.add(view); // WR-01: route the init-wired Retry to the initial fetch
+      if (errorMsg) errorMsg.textContent = `Failed to load ${noun}.`;
+      if (errorRegion) errorRegion.hidden = false;
+      // WR-01: no addEventListener here — Retry is dispatched by the single listener wired
+      // at init (see the container wiring loop below), so listeners never accumulate across
+      // repeated failures and one click never fires loadInitialListData AND loadMoreChunk.
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/chart-list?view=${encodeURIComponent(view)}&offset=0&limit=20`,
+          { signal: controller.signal }
+        );
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+          if (view === 'albums') return; // shipped silent-fallback — skeleton rows remain
+          showInitialLoadError();
+          return;
+        }
+
+        if (view === 'artists') {
+          const data = await res.json() as ChartListArtistResponse;
+          fillArtistList('artists', data.rows);
+          // Artist batch-resolve: thumb + fade-in + website link (REVL-08/09)
+          const ol = document.querySelector<HTMLOListElement>('.chart-list[data-view="artists"] .text-list');
+          if (ol) await appendArtistExtras(ol, data.rows);
+          if (errorRegion) errorRegion.hidden = true;
+          loadedViews.add(view); // WR-02: restore the D-04 no-refetch contract after a successful retry
+          initialLoadFailed.delete(view); // WR-01: Retry routes back to loadMoreChunk from here on
+          if (loadMoreBtn) loadMoreBtn.disabled = false; // WR-01: rows 1–20 exist — Load more is actionable
+        } else if (view === 'tracks') {
+          const data = await res.json() as ChartListTrackResponse;
+          fillTrackList('tracks', data.rows);
+          // Track batch-resolve: website link only, thumb already sourced from imageUrl (REVL-09)
+          const ol = document.querySelector<HTMLOListElement>('.chart-list[data-view="tracks"] .text-list');
+          if (ol) await appendTrackWebsiteLinks(ol, data.rows);
+          if (errorRegion) errorRegion.hidden = true;
+          loadedViews.add(view); // WR-02: restore the D-04 no-refetch contract after a successful retry
+          initialLoadFailed.delete(view); // WR-01: Retry routes back to loadMoreChunk from here on
+          if (loadMoreBtn) loadMoreBtn.disabled = false; // WR-01: rows 1–20 exist — Load more is actionable
+        } else {
+          const data = await res.json() as ChartListResponse;
+          fillTextList('albums', data.rows);
+          const ol = document.querySelector<HTMLOListElement>('.chart-list[data-view="albums"] .text-list');
+          if (ol) await appendWebsiteLinks(ol, data.rows);
+        }
+      } catch (err) {
+        clearTimeout(timeoutId);
+        if (view === 'albums') {
+          console.error('[chart] list fill failed:', err); // skeleton rows remain — silent fallback
+          return;
+        }
+        console.error(`[chart] ${view} list fill failed:`, err);
+        showInitialLoadError();
+      } finally {
+        // WR-01: release the single-flight guard on every exit path (success, early
+        // return, failure) so a later Retry / re-activation can issue a fresh fetch.
+        initialLoadInFlight.delete(view);
+      }
+    })();
+  }
+
   (async () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);
@@ -1681,7 +2091,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);
-    let websites: Record<string, string | null> = {};
+    let websites: Record<string, { websiteUrl: string | null; imageUrl: string | null }> = {};
     try {
       const res = await fetch('/api/artist-websites', {
         method: 'POST',
@@ -1691,7 +2101,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       });
       clearTimeout(timeoutId);
       if (!res.ok) return; // graceful omit on non-ok (REVL-02)
-      websites = await res.json() as Record<string, string | null>;
+      websites = await res.json() as Record<string, { websiteUrl: string | null; imageUrl: string | null }>;
     } catch {
       clearTimeout(timeoutId);
       return; // graceful omit on fetch error/timeout (REVL-02)
@@ -1707,7 +2117,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       const album = rows.find(r => r.rank === rank);
       if (!album) continue;
 
-      const websiteUrl = websites[album.artist];
+      const websiteUrl = websites[album.artist]?.websiteUrl;
       if (!websiteUrl) continue; // null or undefined — no slot
 
       const linksDiv = rowEl.querySelector<HTMLElement>('.text-row__links');
@@ -1730,6 +2140,170 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     }
   }
 
+  // ---- Artist batch-resolve: thumb + fade-in + website link (REVL-08/09) ----
+  // Sibling fork of appendWebsiteLinks for the artists view (D-03/D-04/D-05).
+  // In addition to the conditional "· website" link, resolves each row's imageUrl:
+  // sets thumb.src + data-image (Pitfall 4: always setAttribute, never removeAttribute)
+  // and toggles the text-row__thumb--loaded fade-in class on the image's native load
+  // event. Fails silently — a failed/timed-out batch resolve never blocks the already-
+  // rendered rank/name/plays/last.fm content (distinct from D-07's surfaced initial-load
+  // error, which is the /api/chart-list fetch, not this one). All DOM writes via property
+  // assignment / setAttribute / textContent — no innerHTML (T-18-07).
+  async function appendArtistExtras(
+    ol: HTMLOListElement,
+    rows: ChartListArtistRow[]
+  ): Promise<void> {
+    if (rows.length === 0) return;
+
+    // Collect unique artist names (preserving original casing for response matching);
+    // ChartListArtistRow has no .artist field — key by .name (D-03).
+    const uniqueNames = [...new Set(rows.map(r => r.name))];
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    let extras: Record<string, { websiteUrl: string | null; imageUrl: string | null }> = {};
+    try {
+      const res = await fetch('/api/artist-websites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artists: uniqueNames }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) return; // graceful omit on non-ok
+      extras = await res.json() as Record<string, { websiteUrl: string | null; imageUrl: string | null }>;
+    } catch {
+      clearTimeout(timeoutId);
+      return; // graceful omit on fetch error/timeout
+    }
+
+    const rowEls = Array.from(ol.querySelectorAll<HTMLLIElement>('.text-row'));
+    for (const rowEl of rowEls) {
+      const rankEl = rowEl.querySelector('.text-row__rank');
+      if (!rankEl) continue;
+      const rank = Number(rankEl.textContent);
+      const artist = rows.find(r => r.rank === rank);
+      if (!artist) continue;
+
+      const entry = extras[artist.name];
+
+      // Thumb + data-image (D-01/D-02/D-04) — always setAttribute, never
+      // removeAttribute (Pitfall 4); imageless artists keep data-image="" so the
+      // reveal engine's existing D-02 gate continues hiding the overlay for them.
+      rowEl.setAttribute('data-image', entry?.imageUrl ?? '');
+      if (entry?.imageUrl) {
+        const thumb = rowEl.querySelector<HTMLImageElement>('.text-row__thumb');
+        // WR-01 idempotency: only set src on a still-empty reserved slot — a repeated
+        // resolve must not re-assign src or stack duplicate load listeners.
+        if (thumb && !thumb.getAttribute('src')) {
+          thumb.src = entry.imageUrl;
+          if (thumb.complete) {
+            thumb.classList.add('text-row__thumb--loaded');
+          } else {
+            thumb.addEventListener('load', () => {
+              thumb.classList.add('text-row__thumb--loaded');
+            }, { once: true });
+          }
+        }
+      }
+
+      // Website link (D-05) — same disabled-span→anchor precedent as albums
+      const websiteUrl = entry?.websiteUrl;
+      if (!websiteUrl) continue; // null or undefined — no slot
+
+      const linksDiv = rowEl.querySelector<HTMLElement>('.text-row__links');
+      if (!linksDiv) continue;
+
+      // WR-01 idempotency: never append a second "· website" pair to a row that
+      // already carries one (defense-in-depth behind the single-flight guard).
+      if (Array.from(linksDiv.querySelectorAll('a.text-row__link'))
+        .some((a) => a.textContent === 'website')) continue;
+
+      const sep = document.createElement('span');
+      sep.className = 'text-row__sep';
+      sep.setAttribute('aria-hidden', 'true');
+      sep.textContent = '·';
+      linksDiv.appendChild(sep);
+
+      const webA = document.createElement('a');
+      webA.href = websiteUrl;
+      webA.target = '_blank';
+      webA.rel = 'noopener noreferrer';
+      webA.className = 'text-row__link';
+      webA.setAttribute('aria-label', `${artist.name} website`);
+      webA.textContent = 'website';
+      linksDiv.appendChild(webA);
+    }
+  }
+
+  // ---- Track batch-resolve: website link only (REVL-09) ----
+  // Sibling fork of appendWebsiteLinks for the tracks view, keyed by track.artist.
+  // Track rows' thumb/data-image already resolve synchronously from track.imageUrl
+  // (Phase 22) — this helper consumes only .websiteUrl and never touches the thumb.
+  // Fails silently, same graceful-omit contract as appendArtistExtras. All DOM writes
+  // via createElement/textContent/setAttribute — no innerHTML (T-18-07).
+  async function appendTrackWebsiteLinks(
+    ol: HTMLOListElement,
+    rows: ChartListTrackRow[]
+  ): Promise<void> {
+    if (rows.length === 0) return;
+
+    const uniqueArtists = [...new Set(rows.map(r => r.artist))];
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    let websites: Record<string, { websiteUrl: string | null; imageUrl: string | null }> = {};
+    try {
+      const res = await fetch('/api/artist-websites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artists: uniqueArtists }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) return; // graceful omit on non-ok
+      websites = await res.json() as Record<string, { websiteUrl: string | null; imageUrl: string | null }>;
+    } catch {
+      clearTimeout(timeoutId);
+      return; // graceful omit on fetch error/timeout
+    }
+
+    const rowEls = Array.from(ol.querySelectorAll<HTMLLIElement>('.text-row'));
+    for (const rowEl of rowEls) {
+      const rankEl = rowEl.querySelector('.text-row__rank');
+      if (!rankEl) continue;
+      const rank = Number(rankEl.textContent);
+      const track = rows.find(r => r.rank === rank);
+      if (!track) continue;
+
+      const websiteUrl = websites[track.artist]?.websiteUrl;
+      if (!websiteUrl) continue; // null or undefined — no slot
+
+      const linksDiv = rowEl.querySelector<HTMLElement>('.text-row__links');
+      if (!linksDiv) continue;
+
+      // WR-01 idempotency: never append a second "· website" pair to a row that
+      // already carries one (defense-in-depth behind the single-flight guard).
+      if (Array.from(linksDiv.querySelectorAll('a.text-row__link'))
+        .some((a) => a.textContent === 'website')) continue;
+
+      const sep = document.createElement('span');
+      sep.className = 'text-row__sep';
+      sep.setAttribute('aria-hidden', 'true');
+      sep.textContent = '·';
+      linksDiv.appendChild(sep);
+
+      const webA = document.createElement('a');
+      webA.href = websiteUrl;
+      webA.target = '_blank';
+      webA.rel = 'noopener noreferrer';
+      webA.className = 'text-row__link';
+      webA.setAttribute('aria-label', `${track.artist} website`);
+      webA.textContent = 'website';
+      linksDiv.appendChild(webA);
+    }
+  }
+
   // Initial 20 list rows fill from the lightweight /api/chart-list endpoint
   // (revised D-05): independent of the slow enriched /api/chart-data path, so the
   // list shows live data without blocking on cold MusicBrainz/glow enrichment. The
@@ -1743,6 +2317,13 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       if (!res.ok) return; // skeleton rows remain (acceptable this phase)
       const data = await res.json() as ChartListResponse;
       fillTextList('albums', data.rows);
+      // WR-02: rows 1–20 now exist and the surplus-skeleton removal has run — Load more
+      // can no longer interleave with the initial fill, so it becomes actionable here
+      // (mirrors loadInitialListData's artists/tracks success paths).
+      const albumsLoadMoreBtn = document.querySelector<HTMLButtonElement>(
+        '.chart-list[data-view="albums"] .chart-list__load-more'
+      );
+      if (albumsLoadMoreBtn) albumsLoadMoreBtn.disabled = false;
       // Wire website links after rows are filled — single batch POST per fill (REVL-02)
       const ol = document.querySelector<HTMLOListElement>('.chart-list[data-view="albums"] .text-list');
       if (ol) await appendWebsiteLinks(ol, data.rows);
@@ -1762,6 +2343,10 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
   // Per-view offset state (only albums wired this phase; artists/tracks deferred D-12)
   const listOffsets: Record<string, number> = { albums: 20, artists: 20, tracks: 20 };
   let loadMoreInFlight = false;
+
+  // View-accurate error copy noun for loadMoreChunk (Pitfall 1 fix) — "Failed to load more
+  // albums" was previously hardcoded, which was wrong on the artists/tracks views.
+  const VIEW_NOUN: Record<string, string> = { albums: 'albums', artists: 'artists', tracks: 'tracks' };
 
   function createTextRow(album: ChartListRow): HTMLLIElement {
     const li = document.createElement('li');
@@ -1856,6 +2441,185 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     return li;
   }
 
+  // createArtistRow — sibling fork of createTextRow for the artists load-more append path
+  // (D-08/D-06/D-01). Artist rows carry rank | name plus a reserved 48px thumb slot (D-01:
+  // src left unset at build time — the batch resolve fills it in Plan 03). All DOM writes
+  // via createElement/textContent/setAttribute — no innerHTML (T-18-07). Mirrors
+  // fillArtistList's field mapping exactly, but builds a fresh <li>.
+  function createArtistRow(artist: ChartListArtistRow): HTMLLIElement {
+    const li = document.createElement('li');
+    li.className = 'text-row';
+    li.setAttribute('data-image', ''); // no imageUrl at build time (D-01/D-02); filled by Plan 03's batch resolve
+
+    // Primary: rank | name
+    const primary = document.createElement('div');
+    primary.className = 'text-row__primary';
+
+    const rankSpan = document.createElement('span');
+    rankSpan.className = 'text-row__rank';
+    rankSpan.textContent = String(artist.rank);
+    primary.appendChild(rankSpan);
+
+    const sep1 = document.createElement('span');
+    sep1.className = 'text-row__sep';
+    sep1.setAttribute('aria-hidden', 'true');
+    sep1.textContent = '|';
+    primary.appendChild(sep1);
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'text-row__name';
+    nameSpan.textContent = artist.name;
+    nameSpan.title = artist.name;
+    primary.appendChild(nameSpan);
+
+    li.appendChild(primary);
+
+    // Plays group
+    const playsGroup = document.createElement('div');
+    playsGroup.className = 'text-row__plays-group';
+
+    const playsLabel = document.createElement('span');
+    playsLabel.className = 'text-row__plays-label';
+    playsLabel.textContent = 'Plays';
+    playsGroup.appendChild(playsLabel);
+
+    const playsVal = document.createElement('span');
+    playsVal.className = 'text-row__plays';
+    playsVal.textContent = listFormatPlays(artist.playcount);
+    playsGroup.appendChild(playsVal);
+
+    li.appendChild(playsGroup);
+
+    // Links — real last.fm link when url present (D-09), else disabled span fallback
+    const linksDiv = document.createElement('div');
+    linksDiv.className = 'text-row__links';
+
+    if (artist.url) {
+      const lfmA = document.createElement('a');
+      lfmA.href = artist.url;
+      lfmA.target = '_blank';
+      lfmA.rel = 'noopener noreferrer';
+      lfmA.className = 'text-row__link';
+      lfmA.setAttribute('aria-label', `Listen to ${artist.name} on last.fm`);
+      lfmA.textContent = 'last.fm';
+      linksDiv.appendChild(lfmA);
+    } else {
+      const linkSpan = document.createElement('span');
+      linkSpan.className = 'text-row__link text-row__link--disabled';
+      linkSpan.setAttribute('aria-hidden', 'true');
+      linkSpan.textContent = 'last.fm';
+      linksDiv.appendChild(linkSpan);
+    }
+
+    li.appendChild(linksDiv);
+
+    // Reserved 48px thumb slot (D-01) — no src at build time; the batch resolve
+    // (Plan 03) sets thumb.src once an imageUrl resolves for this artist.
+    const thumb = document.createElement('img');
+    thumb.className = 'text-row__thumb';
+    thumb.alt = '';
+    thumb.width = 48;
+    thumb.height = 48;
+    li.appendChild(thumb);
+
+    return li;
+  }
+
+  // createTrackRow — sibling fork of createTextRow for the tracks load-more append path
+  // (D-08/D-10). Track rows carry rank | title — artist, plus the 48px thumb (D-10: tracks
+  // DO get a thumb). All DOM writes via createElement/textContent/setAttribute — no
+  // innerHTML (T-18-07). Mirrors fillTrackList's field mapping exactly, but builds a fresh <li>.
+  function createTrackRow(track: ChartListTrackRow): HTMLLIElement {
+    const li = document.createElement('li');
+    li.className = 'text-row';
+    li.setAttribute('data-image', track.imageUrl ?? '');
+
+    // Primary: rank | title — artist
+    const primary = document.createElement('div');
+    primary.className = 'text-row__primary';
+
+    const rankSpan = document.createElement('span');
+    rankSpan.className = 'text-row__rank';
+    rankSpan.textContent = String(track.rank);
+    primary.appendChild(rankSpan);
+
+    const sep1 = document.createElement('span');
+    sep1.className = 'text-row__sep';
+    sep1.setAttribute('aria-hidden', 'true');
+    sep1.textContent = '|';
+    primary.appendChild(sep1);
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'text-row__track';
+    titleSpan.textContent = track.name;
+    titleSpan.title = track.name;
+    primary.appendChild(titleSpan);
+
+    const sep2 = document.createElement('span');
+    sep2.className = 'text-row__sep';
+    sep2.setAttribute('aria-hidden', 'true');
+    sep2.textContent = '—';
+    primary.appendChild(sep2);
+
+    const artistSpan = document.createElement('span');
+    artistSpan.className = 'text-row__artist';
+    artistSpan.textContent = track.artist;
+    artistSpan.title = track.artist;
+    primary.appendChild(artistSpan);
+
+    li.appendChild(primary);
+
+    // Plays group
+    const playsGroup = document.createElement('div');
+    playsGroup.className = 'text-row__plays-group';
+
+    const playsLabel = document.createElement('span');
+    playsLabel.className = 'text-row__plays-label';
+    playsLabel.textContent = 'Plays';
+    playsGroup.appendChild(playsLabel);
+
+    const playsVal = document.createElement('span');
+    playsVal.className = 'text-row__plays';
+    playsVal.textContent = listFormatPlays(track.playcount);
+    playsGroup.appendChild(playsVal);
+
+    li.appendChild(playsGroup);
+
+    // Links — real last.fm link when url present (D-09), else disabled span fallback
+    const linksDiv = document.createElement('div');
+    linksDiv.className = 'text-row__links';
+
+    if (track.url) {
+      const lfmA = document.createElement('a');
+      lfmA.href = track.url;
+      lfmA.target = '_blank';
+      lfmA.rel = 'noopener noreferrer';
+      lfmA.className = 'text-row__link';
+      lfmA.setAttribute('aria-label', `Listen to ${track.name} by ${track.artist} on last.fm`);
+      lfmA.textContent = 'last.fm';
+      linksDiv.appendChild(lfmA);
+    } else {
+      const linkSpan = document.createElement('span');
+      linkSpan.className = 'text-row__link text-row__link--disabled';
+      linkSpan.setAttribute('aria-hidden', 'true');
+      linkSpan.textContent = 'last.fm';
+      linksDiv.appendChild(linkSpan);
+    }
+
+    li.appendChild(linksDiv);
+
+    // Inline thumb — set src from raw CDN url (D-10: tracks DO carry a thumbnail)
+    const thumb = document.createElement('img');
+    thumb.className = 'text-row__thumb';
+    thumb.alt = '';
+    thumb.width = 48;
+    thumb.height = 48;
+    if (track.imageUrl) thumb.src = track.imageUrl;
+    li.appendChild(thumb);
+
+    return li;
+  }
+
   async function loadMoreChunk(view: string): Promise<void> {
     if (loadMoreInFlight) return;
     loadMoreInFlight = true;
@@ -1888,8 +2652,8 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       clearTimeout(timeoutId);
 
       if (!res.ok) {
-        // D-16: inline error + retry; already-loaded rows stay intact
-        if (errorMsg) errorMsg.textContent = `Failed to load more albums (${res.status}).`;
+        // D-16: inline error + retry; already-loaded rows stay intact (Pitfall 1: view-accurate noun)
+        if (errorMsg) errorMsg.textContent = `Failed to load more ${VIEW_NOUN[view] ?? 'items'} (${res.status}).`;
         errorRegion.hidden = false;
         btn.disabled = false;
         btn.removeAttribute('aria-busy');
@@ -1898,15 +2662,32 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
         return;
       }
 
-      const data = await res.json() as ChartListResponse;
+      // Per-view row-builder dispatch (LIST-06/LIST-07) — albums keeps createTextRow unchanged.
+      const data = await res.json() as ChartListResponse | ChartListArtistResponse | ChartListTrackResponse;
 
-      // Append new rows — T-18-09: only textContent/setAttribute (via createTextRow)
-      for (const row of data.rows) {
-        ol.appendChild(createTextRow(row));
+      // Append new rows — T-18-09: only textContent/setAttribute (via per-view row builder)
+      if (view === 'artists') {
+        const artistRows = (data as ChartListArtistResponse).rows;
+        for (const row of artistRows) {
+          ol.appendChild(createArtistRow(row));
+        }
+        // Batch-resolve thumb + fade-in + website link for the newly appended rows (REVL-08/09)
+        await appendArtistExtras(ol, artistRows);
+      } else if (view === 'tracks') {
+        const trackRows = (data as ChartListTrackResponse).rows;
+        for (const row of trackRows) {
+          ol.appendChild(createTrackRow(row));
+        }
+        // Batch-resolve website link for the newly appended rows (REVL-09)
+        await appendTrackWebsiteLinks(ol, trackRows);
+      } else {
+        const albumRows = (data as ChartListResponse).rows;
+        for (const row of albumRows) {
+          ol.appendChild(createTextRow(row));
+        }
+        // Wire website links for newly appended rows — albums (unchanged)
+        await appendWebsiteLinks(ol, albumRows);
       }
-
-      // Wire website links for newly appended rows — same batch helper as initial fill (REVL-02)
-      await appendWebsiteLinks(ol, data.rows);
 
       // Advance offset by actual rows appended (D-03)
       listOffsets[view] = offset + data.rows.length;
@@ -1927,7 +2708,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       if (errorMsg) {
         errorMsg.textContent = (err instanceof Error && err.name === 'AbortError')
           ? 'Request timed out.'
-          : 'Failed to load more albums.';
+          : `Failed to load more ${VIEW_NOUN[view] ?? 'items'}.`;
       }
       errorRegion.hidden = false;
       btn.disabled = false;
@@ -1953,11 +2734,19 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       });
     }
 
-    // Wire retry button once at init — T-18-11: refetches the SAME offset (no advance)
+    // Wire retry button once at init — T-18-11: refetches the SAME offset (no advance).
+    // WR-01: the error region is shared between the initial-load and load-more paths, so
+    // Retry dispatches on per-view load state — while the view's initial load has not yet
+    // succeeded it re-issues the initial fetch (offset 0) exactly once per click; only
+    // after a successful initial fill does it route to loadMoreChunk. Never both at once.
     const retryBtn = container.querySelector<HTMLButtonElement>('.chart-list__retry');
     if (retryBtn) {
       retryBtn.addEventListener('click', () => {
-        loadMoreChunk(view);
+        if (initialLoadFailed.has(view)) {
+          loadInitialListData(view);
+        } else {
+          loadMoreChunk(view);
+        }
       });
     }
   });
@@ -1968,10 +2757,8 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
   // Reduced-motion: short-circuit — overlay never created, no listeners attached (REVL-06).
   // No-hover (touch): short-circuit — inline 48px thumb handles art reveal (REVL-04).
   (() => {
-    const list = document.querySelector<HTMLOListElement>(
-      '.chart-list[data-view="albums"] .text-list'
-    );
-    if (!list) return;
+    const section = document.querySelector<HTMLElement>('.chart-list-section');
+    if (!section) return;
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -2004,7 +2791,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       const el = document.elementFromPoint(lastX, lastY) as HTMLElement | null;
       if (!el) return null;
       const row = el.closest('.text-row') as HTMLLIElement | null;
-      return row && list?.contains(row) ? row : null;
+      return row && section?.contains(row) ? row : null;
     }
 
     function setActive(row: HTMLLIElement | null): void {
@@ -2080,7 +2867,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       const link = target?.closest('.text-row__link') as HTMLAnchorElement | null;
       if (!link) return;
       const row = link.closest('.text-row') as HTMLLIElement | null;
-      if (row && list?.contains(row)) {
+      if (row && section?.contains(row)) {
         focusedRow = row;
         schedule();
       }
@@ -2096,11 +2883,11 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       setActive(null);
     }
 
-    list.addEventListener('mousemove', onMouseMove, { passive: true });
+    section.addEventListener('mousemove', onMouseMove, { passive: true });
     document.addEventListener('scroll', onScroll, { passive: true });
-    list.addEventListener('mouseleave', onMouseLeave);
-    list.addEventListener('focusin', onFocusIn);
-    list.addEventListener('focusout', onFocusOut);
+    section.addEventListener('mouseleave', onMouseLeave);
+    section.addEventListener('focusin', onFocusIn);
+    section.addEventListener('focusout', onFocusOut);
   })();
 
   // ---- Lazy image shimmer removal ----
