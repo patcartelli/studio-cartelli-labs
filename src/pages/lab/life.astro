@@ -157,7 +157,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       const styles = getComputedStyle(document.documentElement);
       colors = {
         alive: styles.getPropertyValue('--color-on-surface').trim() || '#000000',
-        dead: styles.getPropertyValue('--color-surface-subtle').trim() || '#f0f0f0',
+        dead: styles.getPropertyValue('--color-surface').trim() || '#f0f0f0',
       };
     }
 
