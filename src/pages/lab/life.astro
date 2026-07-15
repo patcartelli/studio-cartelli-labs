@@ -1,0 +1,344 @@
+---
+// src/pages/lab/life.astro
+// Conway's Game of Life — fully client-side playground. No API, no KV.
+// Statically prerendered (output:'server' repo default is SSR).
+export const prerender = true;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Life"
+  description="Conway's Game of Life — an interactive cellular automaton playground."
+  ogTitle="Life"
+>
+  <section class="life container">
+    <h1 class="life__heading">life.</h1>
+    <p class="life__intro">
+      Conway's Game of Life. Click or drag on the grid to draw cells, then let
+      the simulation run — classic B3/S23 rules on a wrap-around grid.
+    </p>
+
+    <div class="life__frame">
+      <canvas
+        class="life__canvas"
+        id="life-canvas"
+        role="img"
+        aria-label="Conway's Game of Life simulation grid. Use the controls below to play, pause, step, randomize, or clear the grid."></canvas>
+    </div>
+
+    <div class="life__controls">
+      <button type="button" id="life-play" class="pill-button pill-button--outlined" aria-pressed="false">
+        Play
+      </button>
+      <button type="button" id="life-step" class="pill-button pill-button--outlined">Step</button>
+      <button type="button" id="life-random" class="pill-button pill-button--outlined">Randomize</button>
+      <button type="button" id="life-clear" class="pill-button pill-button--outlined">Clear</button>
+      <label class="life__speed">
+        Speed
+        <input type="range" id="life-speed" min="2" max="30" step="1" value="12" />
+      </label>
+      <span class="life__generation" id="life-generation">generation 0</span>
+    </div>
+    <p class="visually-hidden" id="life-status" aria-live="polite"></p>
+  </section>
+</BaseLayout>
+
+<style>
+  .life {
+    padding-top: var(--space-2xl);
+    padding-bottom: var(--space-xl);
+  }
+
+  .life__heading {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-display-large);
+    line-height: var(--lh-display-large);
+    margin-bottom: var(--space-md);
+  }
+
+  .life__intro {
+    font-family: var(--font-body);
+    font-size: var(--text-body-large);
+    line-height: var(--lh-body-large);
+    color: var(--color-on-surface-dimmed);
+    margin-bottom: var(--space-lg);
+    max-width: 640px;
+  }
+
+  .life__frame {
+    height: clamp(320px, 55vh, 560px);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: clip;
+    margin-bottom: var(--space-sm);
+  }
+
+  .life__canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none; /* drag paints cells; don't scroll the page */
+    cursor: crosshair;
+  }
+
+  .life__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+
+  .life__speed {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+
+  .life__generation {
+    margin-left: auto;
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+
+<script>
+  import {
+    createGrid,
+    step,
+    randomize,
+    clear,
+    getCell,
+    setCell,
+    countLive,
+    type LifeGrid,
+  } from '../../lib/life';
+
+  const CELL = 11; // CSS px per cell
+  const DEFAULT_DENSITY = 0.28;
+
+  function initLife() {
+    const canvasMaybe = document.getElementById('life-canvas') as HTMLCanvasElement | null;
+    if (!canvasMaybe || canvasMaybe.dataset.lifeInit === 'true') return;
+    canvasMaybe.dataset.lifeInit = 'true';
+    // Re-typed as non-null: TS control-flow narrowing above does not carry into the
+    // nested function declarations below (draw, sizeCanvas, cellFromEvent) that
+    // reference `canvas`/`ctx`, so we bind a definitely-non-null local instead.
+    const canvas: HTMLCanvasElement = canvasMaybe;
+
+    const frame = canvas.parentElement as HTMLElement;
+    const playBtn = document.getElementById('life-play') as HTMLButtonElement;
+    const stepBtn = document.getElementById('life-step') as HTMLButtonElement;
+    const randomBtn = document.getElementById('life-random') as HTMLButtonElement;
+    const clearBtn = document.getElementById('life-clear') as HTMLButtonElement;
+    const speedInput = document.getElementById('life-speed') as HTMLInputElement;
+    const generationEl = document.getElementById('life-generation') as HTMLElement;
+    const statusEl = document.getElementById('life-status') as HTMLElement;
+    const ctxMaybe = canvas.getContext('2d');
+    if (!ctxMaybe) return;
+    const ctx: CanvasRenderingContext2D = ctxMaybe;
+
+    let grid: LifeGrid = createGrid(1, 1);
+    let running = false;
+    let generation = 0;
+    let gps = Number(speedInput.value);
+    let rafId = 0;
+    let lastStepTime = 0;
+    let resizeTimer = 0;
+    let colors = { alive: '#000000', dead: '#f0f0f0' };
+
+    function readColors() {
+      const styles = getComputedStyle(document.documentElement);
+      colors = {
+        alive: styles.getPropertyValue('--color-on-surface').trim() || '#000000',
+        dead: styles.getPropertyValue('--color-surface-subtle').trim() || '#f0f0f0',
+      };
+    }
+
+    function draw() {
+      ctx.fillStyle = colors.dead;
+      ctx.fillRect(0, 0, frame.clientWidth, frame.clientHeight);
+      ctx.fillStyle = colors.alive;
+      for (let row = 0; row < grid.rows; row++) {
+        for (let col = 0; col < grid.cols; col++) {
+          if (getCell(grid, col, row) === 1) {
+            ctx.fillRect(col * CELL + 0.5, row * CELL + 0.5, CELL - 1, CELL - 1);
+          }
+        }
+      }
+    }
+
+    function updateGeneration() {
+      generationEl.textContent = `generation ${generation}`;
+    }
+
+    function announce(text: string) {
+      statusEl.textContent = text;
+    }
+
+    function sizeCanvas() {
+      const cssW = frame.clientWidth;
+      const cssH = frame.clientHeight;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const cols = Math.max(10, Math.floor(cssW / CELL));
+      const rows = Math.max(10, Math.floor(cssH / CELL));
+      if (cols !== grid.cols || rows !== grid.rows) {
+        grid = createGrid(cols, rows);
+        randomize(grid, DEFAULT_DENSITY);
+        generation = 0;
+        updateGeneration();
+      }
+      draw();
+    }
+
+    function setRunning(next: boolean) {
+      running = next;
+      lastStepTime = 0;
+      playBtn.textContent = next ? 'Pause' : 'Play';
+      playBtn.setAttribute('aria-pressed', String(next));
+      announce(next ? 'Running' : `Paused at generation ${generation}`);
+    }
+
+    function advance() {
+      grid = step(grid);
+      generation++;
+      updateGeneration();
+      draw();
+    }
+
+    function tick(t: number) {
+      rafId = requestAnimationFrame(tick);
+      if (!running) return;
+      if (t - lastStepTime >= 1000 / gps) {
+        lastStepTime = t;
+        advance();
+      }
+    }
+
+    // --- Controls ---
+    playBtn.addEventListener('click', () => setRunning(!running));
+    stepBtn.addEventListener('click', () => {
+      if (running) setRunning(false);
+      advance();
+    });
+    randomBtn.addEventListener('click', () => {
+      randomize(grid, DEFAULT_DENSITY);
+      generation = 0;
+      updateGeneration();
+      draw();
+      announce('Randomized');
+    });
+    clearBtn.addEventListener('click', () => {
+      if (running) setRunning(false);
+      clear(grid);
+      generation = 0;
+      updateGeneration();
+      draw();
+      announce('Cleared');
+    });
+    speedInput.addEventListener('input', () => {
+      gps = Number(speedInput.value);
+    });
+
+    // --- Pointer drawing: tap toggles; drag paints with the value the drag started with ---
+    let painting = false;
+    let paintValue: 0 | 1 = 1;
+
+    function cellFromEvent(e: PointerEvent): { col: number; row: number } | null {
+      const rect = canvas.getBoundingClientRect();
+      const col = Math.floor((e.clientX - rect.left) / CELL);
+      const row = Math.floor((e.clientY - rect.top) / CELL);
+      if (col < 0 || col >= grid.cols || row < 0 || row >= grid.rows) return null;
+      return { col, row };
+    }
+
+    canvas.addEventListener('pointerdown', (e) => {
+      const cell = cellFromEvent(e);
+      if (!cell) return;
+      painting = true;
+      paintValue = getCell(grid, cell.col, cell.row) === 1 ? 0 : 1;
+      setCell(grid, cell.col, cell.row, paintValue);
+      canvas.setPointerCapture(e.pointerId);
+      draw();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!painting) return;
+      const cell = cellFromEvent(e);
+      if (!cell) return;
+      setCell(grid, cell.col, cell.row, paintValue);
+      draw();
+    });
+    canvas.addEventListener('pointerup', () => {
+      painting = false;
+    });
+    canvas.addEventListener('pointercancel', () => {
+      painting = false;
+    });
+
+    // --- Environment wiring ---
+    const themeObserver = new MutationObserver(() => {
+      readColors();
+      draw();
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    function onVisibilityChange() {
+      if (document.hidden && running) setRunning(false);
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    function onResize() {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(sizeCanvas, 150);
+    }
+    window.addEventListener('resize', onResize);
+
+    // --- Test hook (read-only view of internal state for Playwright) ---
+    (window as any).__lifeTest = {
+      isRunning: () => running,
+      getGeneration: () => generation,
+      countLive: () => countLive(grid),
+      getCell: (col: number, row: number) => getCell(grid, col, row),
+      cellSize: CELL,
+    };
+
+    // --- Boot ---
+    readColors();
+    sizeCanvas(); // seeds the soup
+    rafId = requestAnimationFrame(tick);
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) {
+      announce('Paused');
+    } else {
+      setRunning(true);
+    }
+
+    document.addEventListener(
+      'astro:before-swap',
+      () => {
+        cancelAnimationFrame(rafId);
+        window.clearTimeout(resizeTimer);
+        themeObserver.disconnect();
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        window.removeEventListener('resize', onResize);
+        delete (window as any).__lifeTest;
+      },
+      { once: true },
+    );
+  }
+
+  initLife();
+  document.addEventListener('astro:page-load', initLife);
+</script>

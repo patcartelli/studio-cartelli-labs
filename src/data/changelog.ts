@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    project: 'life',
+    date: '2026-07-15',
+    items: [
+      { label: 'feature', text: "Conway's Game of Life — interactive canvas playground with play/pause, step, speed, randomize, clear, and pointer drawing" },
+    ],
+  },
+  {
     project: 'chart',
     date: '2026-05-21',
     items: [
