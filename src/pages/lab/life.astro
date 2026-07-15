@@ -147,6 +147,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     let grid: LifeGrid = createGrid(1, 1);
     let running = false;
     let generation = 0;
+    let seeded = false;
     let gps = Number(speedInput.value);
     let rafId = 0;
     let lastStepTime = 0;
@@ -192,9 +193,20 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       const cols = Math.max(10, Math.floor(cssW / CELL));
       const rows = Math.max(10, Math.floor(cssH / CELL));
       if (cols !== grid.cols || rows !== grid.rows) {
-        grid = createGrid(cols, rows);
-        randomize(grid, DEFAULT_DENSITY);
-        generation = 0;
+        const next = createGrid(cols, rows);
+        if (!seeded) {
+          randomize(next, DEFAULT_DENSITY);
+          seeded = true;
+        } else {
+          const copyCols = Math.min(grid.cols, cols);
+          const copyRows = Math.min(grid.rows, rows);
+          for (let row = 0; row < copyRows; row++) {
+            for (let col = 0; col < copyCols; col++) {
+              setCell(next, col, row, getCell(grid, col, row) as 0 | 1);
+            }
+          }
+        }
+        grid = next;
         updateGeneration();
       }
       draw();
@@ -313,6 +325,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       getGeneration: () => generation,
       countLive: () => countLive(grid),
       getCell: (col: number, row: number) => getCell(grid, col, row),
+      getCols: () => grid.cols,
+      getRows: () => grid.rows,
       cellSize: CELL,
     };
 

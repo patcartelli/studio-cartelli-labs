@@ -12,6 +12,8 @@ declare global {
       getGeneration: () => number;
       countLive: () => number;
       getCell: (col: number, row: number) => number;
+      getCols: () => number;
+      getRows: () => number;
       cellSize: number;
     };
   }
@@ -115,6 +117,38 @@ test('clicking the canvas toggles a cell', async ({ page }) => {
     cell,
   );
   expect(after).toBe(before === 1 ? 0 : 1);
+});
+
+test('resize preserves hand-drawn cells and the generation counter', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/lab/life');
+  await waitForHook(page);
+
+  await page.locator('#life-clear').click();
+  await page.locator('#life-step').click();
+  await page.locator('#life-step').click();
+  const gen = await page.evaluate(() => window.__lifeTest!.getGeneration());
+  expect(gen).toBe(2);
+
+  const cell = { col: 5, row: 5 };
+  const size = await page.evaluate(() => window.__lifeTest!.cellSize);
+  await page.locator('#life-canvas').click({
+    position: { x: cell.col * size + size / 2, y: cell.row * size + size / 2 },
+  });
+  expect(
+    await page.evaluate(({ col, row }) => window.__lifeTest!.getCell(col, row), cell),
+  ).toBe(1);
+
+  const cols0 = await page.evaluate(() => window.__lifeTest!.getCols());
+  await page.setViewportSize({ width: 700, height: 700 });
+  await expect
+    .poll(() => page.evaluate(() => window.__lifeTest!.getCols()))
+    .not.toBe(cols0);
+
+  expect(
+    await page.evaluate(({ col, row }) => window.__lifeTest!.getCell(col, row), cell),
+  ).toBe(1);
+  expect(await page.evaluate(() => window.__lifeTest!.getGeneration())).toBe(gen);
 });
 
 test.describe('with motion allowed', () => {
