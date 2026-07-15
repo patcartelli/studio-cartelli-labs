@@ -200,12 +200,14 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       draw();
     }
 
-    function setRunning(next: boolean) {
+    function setRunning(next: boolean, silent = false) {
       running = next;
       lastStepTime = 0;
       playBtn.textContent = next ? 'Pause' : 'Play';
       playBtn.setAttribute('aria-pressed', String(next));
-      announce(next ? 'Running' : `Paused at generation ${generation}`);
+      if (!silent) {
+        announce(next ? 'Running' : `Paused at generation ${generation}`);
+      }
     }
 
     function advance() {
@@ -227,8 +229,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     // --- Controls ---
     playBtn.addEventListener('click', () => setRunning(!running));
     stepBtn.addEventListener('click', () => {
-      if (running) setRunning(false);
       advance();
+      if (running) setRunning(false);
     });
     randomBtn.addEventListener('click', () => {
       randomize(grid, DEFAULT_DENSITY);
@@ -319,10 +321,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     sizeCanvas(); // seeds the soup
     rafId = requestAnimationFrame(tick);
     const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (prefersReduced) {
-      announce('Paused');
-    } else {
-      setRunning(true);
+    if (!prefersReduced) {
+      setRunning(true, true);
     }
 
     document.addEventListener(
