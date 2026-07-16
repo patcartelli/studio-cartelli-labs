@@ -1626,44 +1626,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
   }
 
   // ---- Progressive fill ----
-  type LatestRelease = { coverUrl: string; title: string; date?: string };
-
-  type ChartArtist = {
-    name: string;
-    mbid: string;
-    url: string;
-    imageUrl: string;
-    glowColor?: string;
-    latestRelease: LatestRelease | null;
-  };
-
-  type ChartAlbum = {
-    rank: number;
-    name: string;
-    artist: string;
-    playcount: number;
-    imageUrl: string;
-    listenUrl: string | null;
-  };
-
-  type ChartTrack = {
-    rank: number;
-    name: string;
-    artist: string;
-    playcount: number;
-    imageUrl: string;
-    listenUrl: string | null;
-  };
-
-  type ChartDataResponse = {
-    fetchedAt: number;
-    albums: ChartAlbum[];
-    tracks: ChartTrack[];
-    artists: ChartArtist[];
-  };
-
-  type ArtistMap = Map<string, ChartArtist>;
-
   function fallbackAll() {
     const allHide = Array.from(document.querySelectorAll<HTMLElement>(
       '.chart__tile--artist .chart__tile-placeholder'
@@ -1680,17 +1642,45 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     }
   }
 
-  function fillArtistGridTiles(artistMap: ArtistMap) {
-    document.querySelectorAll<HTMLElement>('.chart__tile--artist').forEach(tile => {
-      const name = tile.dataset.artist?.toLowerCase() ?? '';
-      const a = artistMap.get(name);
-      // WR-07: third-party image URLs (Fanart.tv/Wikimedia/Deezer/TADB via /api/chart-data)
-      // must pass an http(s) scheme check, and JSON.stringify escapes embedded quotes/
-      // backslashes so a crafted value can't break out of the url() token and inject
-      // arbitrary declarations into the inline style.
-      if (a?.imageUrl && /^https?:\/\//i.test(a.imageUrl)) {
+  // Sources artist-grid tile photos from the read-only artist-bundle cache via
+  // /api/artist-websites (no live MusicBrainz, no glow extraction, no Odesli).
+  // Self-contained: collects tile names, fetches, applies — drives fallbackAll on
+  // any non-ok response, fetch error, or timeout (graceful, matches prior contract).
+  async function fillArtistGridTiles(): Promise<void> {
+    const tiles = Array.from(document.querySelectorAll<HTMLElement>('.chart__tile--artist'));
+    const names = [...new Set(tiles.map(t => t.dataset.artist ?? '').filter(Boolean))];
+    if (names.length === 0) return;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    let extras: Record<string, { websiteUrl: string | null; imageUrl: string | null }>;
+    try {
+      const res = await fetch('/api/artist-websites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artists: names }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) { fallbackAll(); return; }
+      extras = await res.json() as Record<string, { websiteUrl: string | null; imageUrl: string | null }>;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.error('[chart] progressive fill failed:', err);
+      fallbackAll();
+      return;
+    }
+
+    tiles.forEach(tile => {
+      const name = tile.dataset.artist ?? '';
+      const imageUrl = extras[name]?.imageUrl;
+      // WR-07: third-party image URLs (Fanart.tv/Wikimedia/Deezer/TADB via
+      // /api/artist-websites) must pass an http(s) scheme check, and JSON.stringify
+      // escapes embedded quotes/backslashes so a crafted value can't break out of the
+      // url() token and inject arbitrary declarations into the inline style.
+      if (imageUrl && /^https?:\/\//i.test(imageUrl)) {
         tile.querySelector('.chart__tile-placeholder')?.remove();
-        tile.style.backgroundImage = `url(${JSON.stringify(a.imageUrl)})`;
+        tile.style.backgroundImage = `url(${JSON.stringify(imageUrl)})`;
         tile.classList.add('has-photo');
       }
     });
@@ -1704,7 +1694,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     return String(n);
   }
 
-  // Fill the initial 20 skeleton rows of the text list from the chart-data payload (D-05).
+  // Fill the initial 20 skeleton rows of the text list from the /api/chart-list payload (D-05).
   // Uses textContent (not innerHTML) for all user-supplied strings — T-18-07 XSS mitigation.
   interface ChartListRow {
     rank: number;
@@ -2058,22 +2048,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     })();
   }
 
-  (async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10_000);
-    try {
-      const res = await fetch('/api/chart-data', { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!res.ok) { fallbackAll(); return; }
-      const data = await res.json() as ChartDataResponse;
-      const artistMap: ArtistMap = new Map(data.artists.map(a => [a.name.toLowerCase(), a]));
-      fillArtistGridTiles(artistMap);
-    } catch (err) {
-      clearTimeout(timeoutId);
-      console.error('[chart] progressive fill failed:', err);
-      fallbackAll();
-    }
-  })();
+  fillArtistGridTiles();
 
   // ---- Artist-website batch lookup (REVL-02) ----
   // Appends a '·' sep + website <a> to each rendered row whose artist has a cached
@@ -2305,8 +2280,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
   }
 
   // Initial 20 list rows fill from the lightweight /api/chart-list endpoint
-  // (revised D-05): independent of the slow enriched /api/chart-data path, so the
-  // list shows live data without blocking on cold MusicBrainz/glow enrichment. The
+  // (revised D-05): independent of any cold MusicBrainz/glow enrichment. The
   // list never reads enriched fields, and Load-more (Plan 18-04) uses the same source.
   (async () => {
     const controller = new AbortController();
