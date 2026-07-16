@@ -6,7 +6,7 @@ export const prerender = false;
 
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import type { PipelineEnv } from '../../lib/chart-pipeline';
+import type { PipelineEnv } from '../../lib/pipeline-env';
 import { getCachedArtistBundleReadOnly } from '../../lib/artist-bundle-cache';
 
 // D-03: omit last.fm-host URLs — these are cascade last-resort fallbacks, not genuine external sites.

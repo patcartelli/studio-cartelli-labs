@@ -8,7 +8,7 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getFullChartAlbums, getFullChartArtists, getFullChartTracks } from '../../lib/fullchart-cache';
-import type { PipelineEnv } from '../../lib/chart-pipeline';
+import type { PipelineEnv } from '../../lib/pipeline-env';
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
