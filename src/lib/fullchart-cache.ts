@@ -4,7 +4,7 @@
 // Server-only: accepts KVNamespace and PipelineEnv as parameters. Do not import from client code.
 
 import { getTopAlbums, getTopArtists, getTopTracks } from './lastfm';
-import type { PipelineEnv } from './chart-pipeline';
+import type { PipelineEnv } from './pipeline-env';
 
 // Cache key for the full lightweight weekly album chart (versioned to allow safe invalidation).
 export const FULLCHART_KEY = 'chart-list:albums:fullchart:v2';

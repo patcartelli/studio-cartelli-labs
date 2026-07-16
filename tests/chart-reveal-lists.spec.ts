@@ -11,13 +11,6 @@ import AxeBuilder from '@axe-core/playwright';
 
 // ---- Fixtures ----
 
-const chartDataFixtureMinimal = {
-  fetchedAt: Date.now(),
-  artists: [],
-  albums: [],
-  tracks: [],
-};
-
 const albumsListFixtureMinimal = {
   view: 'albums',
   rows: [],
@@ -103,8 +96,6 @@ async function registerRoutes(page: import('@playwright/test').Page): Promise<vo
     return route.fulfill({ json });
   });
   await page.route('**/api/artist-websites', (route) => route.fulfill({ json: artistWebsitesFixture }));
-  // Intercept chart-data to avoid live Last.fm SSR calls causing 500 in test env.
-  await page.route('**/api/chart-data**', (route) => route.fulfill({ json: chartDataFixtureMinimal }));
   // WR-06: fulfill fixture thumb/overlay image fetches offline with a real decodable PNG.
   await page.route('https://lastfm.freetls.fastly.net/**', (route) =>
     route.fulfill({ contentType: 'image/png', body: PIXEL_PNG })

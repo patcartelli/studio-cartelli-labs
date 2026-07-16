@@ -7,7 +7,7 @@ import { test, expect } from '@playwright/test';
 
 // The endpoint needs live Last.fm credentials (LASTFM_API_KEY/USERNAME from
 // .dev.vars) to return 200; CI has no secrets, so it 503s. Skip there per STC-33
-// ("skip chart-data tests in CI"); they still run locally with .dev.vars present.
+// ("skip chart-list tests in CI"); they still run locally with .dev.vars present.
 test.beforeEach(() => {
   test.skip(!!process.env.CI, 'chart-list requires Last.fm credentials, unavailable in CI (STC-33)');
 });
@@ -44,7 +44,7 @@ test('chart-list clamps negative offset to 0 and oversized limit to 100 (T-18-04
   expect(body.limit).toBe(100);
 });
 
-test('chart-list rows carry lightweight fields including url (no listenUrl or glowColor)', async ({ request }) => {
+test('chart-list rows carry lightweight fields including url (no listenUrl)', async ({ request }) => {
   const res = await request.get('/api/chart-list');
   expect(res.status()).toBe(200);
   const body = await res.json();
@@ -60,7 +60,6 @@ test('chart-list rows carry lightweight fields including url (no listenUrl or gl
     expect(row).toHaveProperty('url');
     // Proves no enrichment fields present (LIST-04 safeguard still intact)
     expect(row).not.toHaveProperty('listenUrl');
-    expect(row).not.toHaveProperty('glowColor');
   }
 });
 
@@ -84,7 +83,6 @@ test('chart-list view=artists returns artist-shaped rows (no imageUrl, no artist
     expect(row).not.toHaveProperty('artist');
     // Enrichment-free guard (LIST-04 safeguard extended to the new view)
     expect(row).not.toHaveProperty('listenUrl');
-    expect(row).not.toHaveProperty('glowColor');
   }
 });
 
@@ -105,7 +103,6 @@ test('chart-list view=tracks returns track-shaped rows (rank/name/artist/playcou
     expect(row).toHaveProperty('url');
     // Enrichment-free guard (LIST-04 safeguard extended to the new view)
     expect(row).not.toHaveProperty('listenUrl');
-    expect(row).not.toHaveProperty('glowColor');
   }
 });
 
