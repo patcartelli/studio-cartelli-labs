@@ -36,14 +36,6 @@ const artistWebsitesFixture: Record<string, { websiteUrl: string | null; imageUr
   'Artist Without Website': { websiteUrl: null, imageUrl: null },
 };
 
-// Also mock /api/chart-data so SSR grid fills without 500 errors (returns minimal valid shape)
-const chartDataFixtureMinimal = {
-  fetchedAt: Date.now(),
-  artists: [],
-  albums: [],
-  tracks: [],
-};
-
 // Route helper: registers both API mocks BEFORE page.goto so all requests are intercepted.
 async function registerRoutes(page: import('@playwright/test').Page): Promise<void> {
   await page.route('**/api/chart-list*', (route) =>
@@ -51,10 +43,6 @@ async function registerRoutes(page: import('@playwright/test').Page): Promise<vo
   );
   await page.route('**/api/artist-websites', (route) =>
     route.fulfill({ json: artistWebsitesFixture })
-  );
-  // Intercept chart-data to avoid live Last.fm SSR calls causing 500 in test env
-  await page.route('**/api/chart-data**', (route) =>
-    route.fulfill({ json: chartDataFixtureMinimal })
   );
 }
 

@@ -1,35 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-const chartDataFixture = {
-  fetchedAt: Date.now(),
-  artists: [
-    {
-      name: 'Test Artist',
-      mbid: '00000000-0000-0000-0000-000000000001',
-      url: 'https://www.last.fm/music/Test+Artist',
-      imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg',
-      glowColor: '#4a90d9',
-      latestRelease: {
-        coverUrl: 'https://coverartarchive.org/release/00000000-0000-0000-0000-000000000001/front-500',
-        title: 'Test Latest Release',
-        date: '2024',
-      },
-    },
-  ],
-  albums: [
-    { rank: 1, name: 'Test Album 1', artist: 'Test Artist', playcount: 42, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', listenUrl: 'https://song.link/s/test1' },
-    { rank: 2, name: 'Test Album 2', artist: 'Test Artist', playcount: 38, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', listenUrl: 'https://song.link/s/test2' },
-    { rank: 3, name: 'Test Album 3', artist: 'Test Artist', playcount: 31, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', listenUrl: 'https://song.link/s/test3' },
-    { rank: 4, name: 'Test Album 4', artist: 'Test Artist', playcount: 25, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', listenUrl: 'https://song.link/s/test4' },
-    { rank: 5, name: 'Test Album 5', artist: 'Test Artist', playcount: 19, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', listenUrl: 'https://song.link/s/test5' },
-    { rank: 6, name: 'Test Album 6', artist: 'Test Artist', playcount: 14, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', listenUrl: 'https://song.link/s/test6' },
-  ],
-  tracks: [
-    { rank: 1, name: 'Test Track', artist: 'Test Artist', playcount: 17, imageUrl: 'https://lastfm.freetls.fastly.net/i/u/300x300/test.jpg', listenUrl: 'https://song.link/s/track1' },
-  ],
-};
-
 test('experiments landing page has heading and chart link', async ({ page }) => {
   await page.goto('/lab');
   await expect(page.locator('.experiments__heading')).toBeVisible();
@@ -37,9 +8,7 @@ test('experiments landing page has heading and chart link', async ({ page }) => 
 });
 
 test('experiments/chart page renders either success or error state', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   // Heading is always present regardless of API status
   await expect(page.locator('.chart__heading')).toBeVisible();
@@ -53,18 +22,14 @@ test('experiments/chart page renders either success or error state', async ({ pa
 });
 
 test('chart page has nav and footer (BaseLayout intact)', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   await expect(page.locator('nav[aria-label="Main navigation"]')).toBeVisible();
   await expect(page.locator('footer')).toBeVisible();
 });
 
 test('chart page shows a relative-age freshness timestamp', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   const timestamp = page.locator('.chart__updated');
   await expect(timestamp).toBeVisible();
@@ -73,9 +38,7 @@ test('chart page shows a relative-age freshness timestamp', async ({ page }) => 
 });
 
 test('chart freshness timestamp has valid ISO datetime attribute (CACHE-03)', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   const timestamp = page.locator('.chart__updated');
   await expect(timestamp).toBeVisible();
@@ -85,9 +48,7 @@ test('chart freshness timestamp has valid ISO datetime attribute (CACHE-03)', as
 });
 
 test('chart tiles have overlay elements in DOM', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   // Only check overlays when grid is present (not in error state)
   if (await page.locator('.chart__grid').isVisible().catch(() => false)) {
@@ -99,9 +60,7 @@ test('chart tiles have overlay elements in DOM', async ({ page }) => {
 });
 
 test('chart page has controls bar with toggle and copy button', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__grid').isVisible().catch(() => false)) return; // skip in error state
   await expect(page.locator('.chart__controls')).toBeVisible();
@@ -111,9 +70,7 @@ test('chart page has controls bar with toggle and copy button', async ({ page })
 
 test('labels toggle adds and removes grid modifier class', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   // Target the active (albums) grid specifically
   const grid = page.locator('.chart__view[data-view="albums"] .chart__grid');
@@ -133,9 +90,7 @@ test('labels toggle adds and removes grid modifier class', async ({ page }) => {
 });
 
 test('copy button is present and not disabled', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__grid').isVisible().catch(() => false)) return; // skip in error state
   const btn = page.locator('.chart__copy-btn');
@@ -145,9 +100,7 @@ test('copy button is present and not disabled', async ({ page }) => {
 });
 
 test('chart page has view switcher links', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__view-links').isVisible().catch(() => false)) return;
   await expect(page.locator('.chart__view-link[data-for="albums"]')).toBeVisible();
@@ -158,9 +111,7 @@ test('chart page has view switcher links', async ({ page }) => {
 test('albums view is active by default', async ({ page }) => {
   // Clear localStorage so default applies
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__view[data-view="albums"]').isVisible().catch(() => false)) return;
   await expect(page.locator('.chart__view[data-view="albums"]')).toBeVisible();
@@ -170,9 +121,7 @@ test('albums view is active by default', async ({ page }) => {
 
 test('switching to artists shows artist view and hides copy button and labels toggle', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__view-links').isVisible().catch(() => false)) return;
 
@@ -186,9 +135,7 @@ test('switching to artists shows artist view and hides copy button and labels to
 
 test('switching to tracks shows track view with listen column', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__view-links').isVisible().catch(() => false)) return;
 
@@ -201,9 +148,7 @@ test('switching to tracks shows track view with listen column', async ({ page })
 });
 
 test('view selection persists across reload', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__view-links').isVisible().catch(() => false)) return;
 
@@ -219,9 +164,7 @@ test('view selection persists across reload', async ({ page }) => {
 
 test('tracks view grid tiles have an img or placeholder — no blank src', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__view-links').isVisible().catch(() => false)) return;
   const tracksLink = page.locator('.chart__view-link[data-for="tracks"]');
@@ -240,9 +183,7 @@ test('tracks view grid tiles have an img or placeholder — no blank src', async
 
 test('artist tiles have data-artist attribute', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__view-links').isVisible().catch(() => false)) return;
   const artistLink = page.locator('.chart__view-link[data-for="artists"]');
@@ -257,9 +198,7 @@ test('artist tiles have data-artist attribute', async ({ page }) => {
 });
 
 test('chart changelog disclosure is present and collapsed by default', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   const details = page.locator('.chart__changelog');
   await expect(details).toBeVisible();
@@ -269,9 +208,7 @@ test('chart changelog disclosure is present and collapsed by default', async ({ 
 });
 
 test('chart changelog shows entries when opened', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   await page.locator('.chart__changelog-summary').click();
   const entries = page.locator('.chart__changelog-entry');
@@ -280,9 +217,7 @@ test('chart changelog shows entries when opened', async ({ page }) => {
 });
 
 test('grid tiles and placeholders have shimmer class on initial render (UX-02, UX-03)', async ({ page }) => {
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__grid').isVisible().catch(() => false)) return;
 
@@ -310,9 +245,7 @@ test('grid tiles and placeholders have shimmer class on initial render (UX-02, U
 
 test('shimmer elements have no animation when prefers-reduced-motion is enabled (UX-04)', async ({ page }) => {
   // Default config already sets reducedMotion: 'reduce'
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
   if (!await page.locator('.chart__grid').isVisible().catch(() => false)) return;
   const shimmerEl = page.locator('.chart__shimmer').first();
@@ -332,9 +265,7 @@ test('shimmer elements have animation when motion is allowed', async ({ browser 
   });
   const page = await context.newPage();
   try {
-    await page.route('**/api/chart-data**', async route =>
-      route.fulfill({ json: chartDataFixture })
-    );
+    await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
     await page.goto('http://localhost:4321/lab/chart');
     if (!await page.locator('.chart__grid').isVisible().catch(() => false)) {
       return;
@@ -394,9 +325,7 @@ function mockChartListRoute(page: import('@playwright/test').Page, onRequest?: (
 
 test('switching to artists shows the artists list container and hides the others (D-01)', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await mockChartListRoute(page);
   await page.goto('/lab/chart');
   // WR-05: surface SSR-unavailable environments as skipped (yellow), not silently
@@ -415,9 +344,7 @@ test('switching to artists shows the artists list container and hides the others
 
 test('switching to tracks shows the tracks list container and hides the others (D-01)', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await mockChartListRoute(page);
   await page.goto('/lab/chart');
   // WR-05: surface SSR-unavailable environments as skipped (yellow), not silently
@@ -436,9 +363,7 @@ test('switching to tracks shows the tracks list container and hides the others (
 
 test('artists list rows reserve a thumb slot, empty when no cached image (D-01)', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await mockChartListRoute(page);
   await page.goto('/lab/chart');
   // WR-05: surface SSR-unavailable environments as skipped (yellow), not silently
@@ -462,9 +387,7 @@ test('artists list rows reserve a thumb slot, empty when no cached image (D-01)'
 
 test('switching back to an already-loaded view does not refetch (D-04)', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   let artistsRequestCount = 0;
   await mockChartListRoute(page, (view) => {
     if (view === 'artists') artistsRequestCount++;
@@ -502,10 +425,6 @@ test('switching back to an already-loaded view does not refetch (D-04)', async (
 
 test('D-07: initial-load error shows Retry, recovers, and does not refetch on re-switch', async ({ page }) => {
   await page.addInitScript(() => localStorage.removeItem('chart-view'));
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
-
   let attempt = 0;
   const artistsRows = Array.from({ length: 20 }, (_, i) => ({
     rank: i + 1,
@@ -581,7 +500,7 @@ const M3_VIEWPORTS = [
 
 for (const vp of M3_VIEWPORTS) {
   test(`a11y: /lab/chart has zero axe violations at ${vp.name} (${vp.width}px)`, async ({ browser }) => {
-    // Mocks /api/chart-data but the text-list view is fed by the live /api/chart-list
+    // Mocks /api/artist-websites but the text-list view is fed by the live /api/chart-list
     // (Last.fm), which 503s in CI -> dataless skeleton trips axe on placeholders.
     // Skip in CI per STC-33; runs locally where chart-list returns real data.
     test.skip(!!process.env.CI, 'chart list view needs Last.fm data, unavailable in CI (STC-33)');
@@ -591,9 +510,7 @@ for (const vp of M3_VIEWPORTS) {
     });
     const page = await context.newPage();
     try {
-      await page.route('**/api/chart-data**', async route =>
-        route.fulfill({ json: chartDataFixture })
-      );
+      await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
       await page.goto('http://localhost:4321/lab/chart');
       // Run axe on full page (no .include() scoping) — per RESEARCH Open Question 2:
       // matches a11y.spec.ts behavior and satisfies D-03 "fix violations anywhere on the chart page".
@@ -642,9 +559,7 @@ test('cascade: clipboard rejection → navigator.share called (COPY-05)', async 
     }));
   });
 
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
 
   // D-12 API guard — mirrors CHIP-01/02/03 pattern (spec:924-931).
@@ -695,9 +610,7 @@ test('cascade: clipboard + share rejection → modal opened (COPY-05)', async ({
     ));
   });
 
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
 
   // D-12 API guard — mirrors CHIP-01/02/03 pattern (spec:924-931).
@@ -748,9 +661,7 @@ test('cascade: clipboard rejection + buildChartBlob failure → modal NOT opened
     }));
   });
 
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
 
   // D-12 API guard — mirrors CHIP-01/02/03 pattern (spec:924-931).
@@ -807,9 +718,7 @@ test('cascade: populated grid with lazy tiles reaches terminal state in bounded 
 
   await page.setViewportSize({ width: 375, height: 812 });
 
-  await page.route('**/api/chart-data**', async route =>
-    route.fulfill({ json: chartDataFixture })
-  );
+  await page.route('**/api/artist-websites', route => route.fulfill({ json: {} }));
   await page.goto('/lab/chart');
 
   // D-12 API guard — mirrors CHIP-01/02/03 pattern (spec:924-931).
