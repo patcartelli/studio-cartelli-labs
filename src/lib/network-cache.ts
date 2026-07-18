@@ -108,10 +108,14 @@ export async function getCachedNetworkData(
 // resumable build needs to complete.
 export const NETWORK_WARM_PERIODS = ['1month'] as const;
 
-// 18 artists x 2 Last.fm calls (tags + similar) = 36 subrequests per chunk;
-// plus up to 3 co-running fullchart warmers and 1 INIT artists call worst
-// case stays safely under the free-tier 50-subrequests/invocation cap.
-export const NETWORK_WARM_CHUNK_SIZE = 18;
+// 15 artists x 2 Last.fm calls (tags + similar) = 30 fetch subrequests per
+// chunk. KV operations ALSO count toward the free-tier 50-subrequests cap,
+// so the worst-case tick (INIT + chunk: 2 KV reads + 1 artists fetch +
+// 30 chunk fetches + 2 progress puts = 35) plus three co-running stale
+// fullchart warmers (3 x [KV read + fetch + KV put] = 9) totals 44 --
+// real headroom under 50. At 18 artists/chunk that same worst case lands
+// exactly on the cap and thrashes whenever the fullchart TTLs align.
+export const NETWORK_WARM_CHUNK_SIZE = 15;
 
 // Cron-side rebuild threshold (25 min) -- decoupled from TTL_SECONDS (the
 // page-side staleness threshold, 15 min) so a freshly completed build gets a
