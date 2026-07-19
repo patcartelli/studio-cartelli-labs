@@ -24,7 +24,7 @@ export async function getCachedArtistBundleReadOnly(
   kv: KVNamespace,
   artistName: string
 ): Promise<ArtistBundle | null> {
-  const key = `artist-bundle-v6:${artistName.toLowerCase()}`;
+  const key = `artist-bundle-v7:${artistName.toLowerCase()}`;
   let value: string | null = null;
   try {
     ({ value } = await kv.getWithMetadata(key, { type: 'text' }) as {
