@@ -4,6 +4,7 @@
 export const prerender = false;
 
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import UptimeMarker from '../../components/UptimeMarker.astro';
 import { getCachedTopAlbums, getCachedTopArtists, getCachedTopTracks } from '../../lib/lastfm-cache';
 import type { Album, Artist, Track } from '../../lib/lastfm';
 import { env } from 'cloudflare:workers';
@@ -101,6 +102,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     />
   </Fragment>
   <section class="chart container">
+    {!hasError && <UptimeMarker marker="chart" />}
     <h1 class="chart__heading">chart.</h1>
     <p class="chart__intro">Weekly top albums from Last.fm.</p>
     <time class="chart__updated" datetime={fetchedAtIso}>{updatedAt}</time>
