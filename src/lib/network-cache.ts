@@ -221,7 +221,8 @@ export async function warmNetworkCache(
       // Only advance the first non-fresh period per invocation.
       return;
     }
-  } catch {
-    // Warm is best-effort -- cron fire-and-forget; do not propagate errors.
+  } catch (err) {
+    console.error('[cron] warmNetworkCache failed:', err instanceof Error ? err.message : err);
+    throw err;
   }
 }

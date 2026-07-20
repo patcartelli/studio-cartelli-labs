@@ -113,14 +113,15 @@ export async function getFullChartAlbums(
 
 /**
  * Best-effort warm of the full-chart cache. Called from the cron handler.
- * Returns early if the KV binding is absent. Swallows errors (fire-and-forget intent).
+ * Returns early if the KV binding is absent. Logs and rethrows on failure.
  */
 export async function warmFullChartCache(env: PipelineEnv): Promise<void> {
   if (!env.LASTFM_CHART_CACHE) return;
   try {
     await getFullChartAlbums(env.LASTFM_CHART_CACHE, env);
-  } catch {
-    // Warm is best-effort — cron fire-and-forget; do not propagate errors.
+  } catch (err) {
+    console.error('[cron] warmFullChartCache failed:', err instanceof Error ? err.message : err);
+    throw err;
   }
 }
 
@@ -169,14 +170,15 @@ export async function getFullChartArtists(
 
 /**
  * Best-effort warm of the full-chart artists cache. Called from the cron handler.
- * Returns early if the KV binding is absent. Swallows errors (fire-and-forget intent).
+ * Returns early if the KV binding is absent. Logs and rethrows on failure.
  */
 export async function warmFullChartArtistsCache(env: PipelineEnv): Promise<void> {
   if (!env.LASTFM_CHART_CACHE) return;
   try {
     await getFullChartArtists(env.LASTFM_CHART_CACHE, env);
-  } catch {
-    // Warm is best-effort — cron fire-and-forget; do not propagate errors.
+  } catch (err) {
+    console.error('[cron] warmFullChartArtistsCache failed:', err instanceof Error ? err.message : err);
+    throw err;
   }
 }
 
@@ -226,13 +228,14 @@ export async function getFullChartTracks(
 
 /**
  * Best-effort warm of the full-chart tracks cache. Called from the cron handler.
- * Returns early if the KV binding is absent. Swallows errors (fire-and-forget intent).
+ * Returns early if the KV binding is absent. Logs and rethrows on failure.
  */
 export async function warmFullChartTracksCache(env: PipelineEnv): Promise<void> {
   if (!env.LASTFM_CHART_CACHE) return;
   try {
     await getFullChartTracks(env.LASTFM_CHART_CACHE, env);
-  } catch {
-    // Warm is best-effort — cron fire-and-forget; do not propagate errors.
+  } catch (err) {
+    console.error('[cron] warmFullChartTracksCache failed:', err instanceof Error ? err.message : err);
+    throw err;
   }
 }
