@@ -11,6 +11,7 @@
 import { test, expect } from '@playwright/test';
 import { Miniflare } from 'miniflare';
 import { warmNetworkCache } from '../src/lib/network-cache';
+import { runCronWarms, CRON_STATUS_KEY } from '../src/lib/cron-warm';
 
 // ---------------------------------------------------------------------------
 // Last.fm / Wikidata response shapes (must match parsing logic in
@@ -155,13 +156,29 @@ test('warmNetworkCache resumably builds network:1month across multiple invocatio
   }
 });
 
-test('warmNetworkCache never throws, even when Last.fm is unreachable', async () => {
+// STC-108 changed warmNetworkCache's contract: it now logs and RETHROWS so the
+// runCronWarms wrapper (src/lib/cron-warm.ts) can record per-task failure
+// status in KV. The "never throws" guarantee therefore lives at the cron entry
+// point, not inside warmNetworkCache — this test exercises that real contract:
+// Last.fm/Wikidata unreachable → the cron tick resolves, records the network
+// task as failed, and leaves network:1month untouched (STC-120).
+test('cron warm never throws, even when Last.fm is unreachable', async () => {
   const originalFetch = globalThis.fetch;
   let mf: Miniflare | null = null;
 
   try {
-    globalThis.fetch = async (): Promise<Response> => {
-      throw new Error('network down');
+    // Throw ONLY for the upstream hosts the warm tasks are meant to fail on
+    // (ws.audioscrobbler.com + wikidata.org — the only external hosts any
+    // warm task fetches). An unconditional throw also sabotages unrelated
+    // internal fetches (e.g. Miniflare/undici plumbing), which resolve
+    // differently on egress-less CI runners; the sibling test above scopes
+    // its mock the same way and passes on CI.
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes('ws.audioscrobbler.com') || url.includes('wikidata.org')) {
+        throw new Error('network down');
+      }
+      return originalFetch(input as RequestInfo, init);
     };
 
     mf = new Miniflare({
@@ -177,10 +194,24 @@ test('warmNetworkCache never throws, even when Last.fm is unreachable', async ()
       LASTFM_USERNAME: 'test-user',
     };
 
-    await expect(warmNetworkCache(mockEnv, CHUNK_SIZE)).resolves.toBeUndefined();
+    // warmNetworkCache itself surfaces the failure to its caller (STC-108)...
+    await expect(warmNetworkCache(mockEnv, CHUNK_SIZE)).rejects.toThrow('network down');
 
+    // ...but the cron entry point never throws: it resolves, recording the
+    // failure per-task in the status snapshot.
+    const status = await runCronWarms(mockEnv, '*/5 * * * *');
+    const networkTask = status.tasks.find((t) => t.name === 'network');
+    expect(networkTask).toBeDefined();
+    expect(networkTask!.ok).toBe(false);
+    expect(networkTask!.error).toBe('network down');
+
+    // Failure leaves no partial network:1month behind.
     const value = await kv.get('network:1month', { type: 'json' });
     expect(value).toBeNull();
+
+    // Ops status snapshot is still written even when every task fails.
+    const persistedStatus = await kv.get(CRON_STATUS_KEY, { type: 'json' });
+    expect(persistedStatus).not.toBeNull();
   } finally {
     globalThis.fetch = originalFetch;
     await mf?.dispose();
