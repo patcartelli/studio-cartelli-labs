@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { lastfmListThumbUrl } from '../src/lib/lastfm-image-url';
 
 // Sibling spec to chart-reveal.spec.ts (D-06) — covers the same six reveal/links branches
 // (render+links, reduced-motion, touch, hover, keyboard, axe) for the artists and tracks
@@ -237,7 +238,10 @@ for (const view of VIEWS) {
         // at fill time from the /api/chart-list response, not the batch resolve).
         const thumb = rows.first().locator('.text-row__thumb');
         await expect(thumb).toBeVisible();
-        await expect(thumb).toHaveAttribute('src', tracksListFixture.rows[0].imageUrl);
+        await expect(thumb).toHaveAttribute(
+          'src',
+          lastfmListThumbUrl(tracksListFixture.rows[0].imageUrl),
+        );
         // WR-06 (CR-01 regression): tracks thumbs must render at full opacity —
         // toBeVisible() alone counts opacity:0 elements as visible.
         await expect

@@ -7,6 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import UptimeMarker from '../../components/UptimeMarker.astro';
 import { getCachedTopAlbums, getCachedTopArtists, getCachedTopTracks } from '../../lib/lastfm-cache';
 import type { Album, Artist, Track } from '../../lib/lastfm';
+import { lastfmGridCoverUrl } from '../../lib/lastfm-image-url';
 import { env } from 'cloudflare:workers';
 const _env = env as unknown as { LASTFM_CHART_CACHE: KVNamespace };
 const kv = _env.LASTFM_CHART_CACHE;
@@ -137,12 +138,13 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
                   <div class="chart__tile chart__shimmer">
                     {album.imageUrl ? (
                       <img
-                        src={`/api/proxy-image?url=${encodeURIComponent(album.imageUrl)}`}
+                        src={`/api/proxy-image?url=${encodeURIComponent(lastfmGridCoverUrl(album.imageUrl))}`}
                         crossorigin="anonymous"
                         alt={`${album.name} by ${album.artist}`}
-                        width="300"
-                        height="300"
+                        width="174"
+                        height="174"
                         loading="lazy"
+                        decoding="async"
                       />
                     ) : (
                       <div class="chart__tile-placeholder chart__shimmer" aria-hidden="true"></div>
@@ -185,12 +187,13 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
                   <div class="chart__tile chart__shimmer">
                     {track.imageUrl ? (
                       <img
-                        src={`/api/proxy-image?url=${encodeURIComponent(track.imageUrl)}`}
+                        src={`/api/proxy-image?url=${encodeURIComponent(lastfmGridCoverUrl(track.imageUrl))}`}
                         crossorigin="anonymous"
                         alt={`${track.name} by ${track.artist}`}
-                        width="300"
-                        height="300"
+                        width="174"
+                        height="174"
                         loading="lazy"
+                        decoding="async"
                       />
                     ) : (
                       <div class="chart__tile-placeholder chart__shimmer" aria-hidden="true"></div>
@@ -1245,6 +1248,8 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
 </style>
 
 <script>
+  import { lastfmListThumbUrl, listUsesInlineThumb } from '../../lib/lastfm-image-url';
+
   declare global {
     interface Window {
       cloudflare?: {
@@ -1288,6 +1293,14 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
   // (loadedViews is only re-added on success), would otherwise run the non-idempotent
   // batch resolvers concurrently and append duplicate "· website" links.
   const initialLoadInFlight = new Set<string>();
+  let artistGridFilled = false;
+
+  function wireListThumb(thumb: HTMLImageElement, fullImageUrl: string): void {
+    if (!fullImageUrl || !listUsesInlineThumb()) return;
+    thumb.src = lastfmListThumbUrl(fullImageUrl);
+    thumb.loading = 'lazy';
+    thumb.decoding = 'async';
+  }
 
   function getActiveGrid(): HTMLDivElement | null {
     return document.querySelector<HTMLDivElement>(
@@ -1321,6 +1334,11 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     if (!loadedViews.has(viewName)) {
       loadedViews.add(viewName);
       loadInitialListData(viewName);
+    }
+
+    if (viewName === 'artists' && !artistGridFilled) {
+      artistGridFilled = true;
+      fillArtistGridTiles();
     }
 
     // Re-apply labels to active grid
@@ -1779,10 +1797,10 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       }
       // If album.url is absent, the disabled span remains (D-06 fallback)
 
-      // Set thumb src from raw CDN url (D-08; no proxy-image for plain <img> display)
+      // Touch-only inline thumb (STC-117): desktop uses reveal overlay on hover.
       if (album.imageUrl) {
         const thumb = row.querySelector<HTMLImageElement>('.text-row__thumb');
-        if (thumb) thumb.src = album.imageUrl;
+        if (thumb) wireListThumb(thumb, album.imageUrl);
       }
 
       // --- website link insertion point (Task 3 wires this after artist-website batch) ---
@@ -1950,10 +1968,10 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
         }
       }
 
-      // Set thumb src from raw CDN url (D-10) — tracks DO carry a thumbnail
+      // Touch-only inline thumb (STC-117): desktop uses reveal overlay on hover.
       if (track.imageUrl) {
         const thumb = row.querySelector<HTMLImageElement>('.text-row__thumb');
-        if (thumb) thumb.src = track.imageUrl;
+        if (thumb) wireListThumb(thumb, track.imageUrl);
       }
     }
   }
@@ -2049,8 +2067,6 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
       }
     })();
   }
-
-  fillArtistGridTiles();
 
   // ---- Artist-website batch lookup (REVL-02) ----
   // Appends a '·' sep + website <a> to each rendered row whose artist has a cached
@@ -2172,8 +2188,10 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
         const thumb = rowEl.querySelector<HTMLImageElement>('.text-row__thumb');
         // WR-01 idempotency: only set src on a still-empty reserved slot — a repeated
         // resolve must not re-assign src or stack duplicate load listeners.
-        if (thumb && !thumb.getAttribute('src')) {
+        if (thumb && !thumb.getAttribute('src') && listUsesInlineThumb()) {
           thumb.src = entry.imageUrl;
+          thumb.loading = 'lazy';
+          thumb.decoding = 'async';
           if (thumb.complete) {
             thumb.classList.add('text-row__thumb--loaded');
           } else {
@@ -2411,7 +2429,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     thumb.alt = '';
     thumb.width = 48;
     thumb.height = 48;
-    if (album.imageUrl) thumb.src = album.imageUrl;
+    wireListThumb(thumb, album.imageUrl);
     li.appendChild(thumb);
 
     return li;
@@ -2590,7 +2608,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     thumb.alt = '';
     thumb.width = 48;
     thumb.height = 48;
-    if (track.imageUrl) thumb.src = track.imageUrl;
+    wireListThumb(thumb, track.imageUrl);
     li.appendChild(thumb);
 
     return li;
