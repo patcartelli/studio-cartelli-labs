@@ -1,24 +1,8 @@
 ---
 // src/pages/lab/index.astro
 import BaseLayout from '../../layouts/BaseLayout.astro';
-
-const experiments = [
-  {
-    slug: 'chart',
-    title: 'Chart',
-    description: 'Weekly top albums from Last.fm',
-  },
-  {
-    slug: 'network',
-    title: 'Network',
-    description: 'Artist connections by shared tags and influence',
-  },
-  {
-    slug: 'life',
-    title: 'Life',
-    description: "Conway's Game of Life, playable",
-  },
-];
+import LabCard from '../../components/lab/LabCard.astro';
+import { labEntries } from '../../data/lab-entries.ts';
 ---
 
 <BaseLayout title="Lab" description="Design experiments and data visualizations from Studio Cartelli." ogTitle="Lab">
@@ -27,13 +11,10 @@ const experiments = [
     <p class="experiments__intro">
       A home for small, self-contained side projects.
     </p>
-    <ul class="experiments__list" role="list">
-      {experiments.map((item) => (
+    <ul class="experiments__grid" role="list">
+      {labEntries.map((item, index) => (
         <li class="experiments__item">
-          <a href={`/lab/${item.slug}`} class="experiments__link">
-            <span class="experiments__name">{item.title}</span>
-            <span class="experiments__desc">{item.description}</span>
-          </a>
+          <LabCard entry={item} eager={index === 0} />
         </li>
       ))}
     </ul>
@@ -63,32 +44,26 @@ const experiments = [
     max-width: 640px;
   }
 
-  .experiments__list {
+  .experiments__grid {
     list-style: none;
-    border-top: 1px solid var(--color-border);
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--grid-gap);
   }
 
   .experiments__item {
-    border-bottom: 1px solid var(--color-border);
+    min-width: 0;
   }
 
-  .experiments__link {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2xs);
-    padding-block: var(--space-md);
-    color: inherit;
+  @media (min-width: 600px) {
+    .experiments__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 
-  .experiments__name {
-    font-family: var(--font-body);
-    font-weight: 700;
-    font-size: var(--text-body-large);
-  }
-
-  .experiments__desc {
-    font-size: var(--text-body-medium);
-    line-height: var(--lh-body-medium);
-    color: var(--color-on-surface-dimmed);
+  @media (min-width: 840px) {
+    .experiments__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
   }
 </style>

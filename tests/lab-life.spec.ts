@@ -46,7 +46,7 @@ test('life page has nav and footer (BaseLayout intact)', async ({ page }) => {
 
 test('lab index lists the Life experiment', async ({ page }) => {
   await page.goto('/lab');
-  await expect(page.locator('.experiments__link[href="/lab/life"]')).toBeVisible();
+  await expect(page.locator('a.lab-card[href="/lab/life"]')).toBeVisible();
 });
 
 test('loads paused with a live soup under reduced motion', async ({ page }) => {

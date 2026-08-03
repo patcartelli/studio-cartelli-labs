@@ -1,0 +1,177 @@
+---
+// src/components/lab/LabCard.astro
+// Compact experiment card for homepage lab grid and /lab index.
+// Thumbnail slot accepts an optional image; placeholder shown until STC-186/187.
+import type { LabEntry } from '../../data/lab-entries.ts';
+
+interface Props {
+  entry: LabEntry;
+  /** When set, wires hover-preview delegation (homepage only). */
+  previewSlug?: string;
+  eager?: boolean;
+}
+
+const { entry, previewSlug, eager = false } = Astro.props;
+---
+
+<a
+  href={entry.href}
+  class="lab-card index-entry__link"
+  {...previewSlug ? { 'data-preview': previewSlug, 'data-super-hover': true } : {}}
+>
+  <div class="lab-card__media">
+    {entry.thumbnail ? (
+      <img
+        src={entry.thumbnail}
+        alt=""
+        width="580"
+        height="242"
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+      />
+    ) : (
+      <div class="lab-card__placeholder" aria-hidden="true">
+        <span class="lab-card__placeholder-title">{entry.title}</span>
+      </div>
+    )}
+  </div>
+  <div class="lab-card__body">
+    <p class="index-entry__overline lab-card__overline">{entry.overline}</p>
+    <h3 class="index-entry__title lab-card__title">{entry.title}</h3>
+    <p class="index-entry__desc lab-card__desc">{entry.description}</p>
+    <span class="index-entry__cta lab-card__cta" aria-hidden="true">{entry.ctaLabel}<span> →</span></span>
+  </div>
+</a>
+
+<style>
+  .lab-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    overflow: hidden;
+    background-color: var(--color-surface);
+    text-decoration: none;
+    color: inherit;
+    transition:
+      border-color 240ms ease,
+      box-shadow 240ms ease,
+      opacity 240ms ease;
+  }
+
+  .lab-card:focus-visible {
+    outline: 2px solid var(--color-accent-text);
+    outline-offset: 4px;
+  }
+
+  .lab-card[data-super-hover-active] {
+    border-color: color-mix(in srgb, var(--color-accent-text) 40%, var(--color-border));
+    box-shadow: var(--shadow-card);
+  }
+
+  .lab-card[data-super-hover-active] .lab-card__title {
+    color: var(--color-accent-text);
+  }
+
+  .lab-card__media {
+    aspect-ratio: 2.39 / 1;
+    overflow: hidden;
+    background-color: var(--color-surface-subtle);
+  }
+
+  .lab-card__media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .lab-card__placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: var(--space-sm);
+    background:
+      linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--color-surface-subtle) 80%, var(--color-accent-text) 20%) 0%,
+        var(--color-surface-subtle) 100%
+      );
+  }
+
+  .lab-card__placeholder-title {
+    font-family: var(--font-body);
+    font-size: var(--text-title-medium);
+    line-height: var(--lh-title-medium);
+    color: var(--color-on-surface-muted);
+    text-align: center;
+  }
+
+  .lab-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    padding: var(--space-md);
+    flex: 1 1 auto;
+  }
+
+  /* Shared index-entry class names for hover-preview contract (Phase 33). */
+  .lab-card__overline {
+    font-family: var(--font-body);
+    font-size: var(--text-label-small);
+    line-height: var(--lh-label-small);
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--color-on-surface-dimmed);
+    font-feature-settings: "case" 1, "ss01" 1, "ss06" 1;
+    margin: 0;
+  }
+
+  .lab-card__title {
+    font-family: var(--font-body);
+    font-size: var(--text-title-large);
+    line-height: var(--lh-title-large);
+    font-weight: 400;
+    margin: 0;
+    transition: color 240ms ease;
+  }
+
+  .lab-card__desc {
+    flex: 1 1 auto;
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    line-height: var(--lh-body-medium);
+    letter-spacing: 0.25px;
+    color: var(--color-on-surface-dimmed);
+  }
+
+  .lab-card__cta {
+    align-self: flex-start;
+    margin-top: var(--space-xs);
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    padding: var(--space-xs) var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: var(--text-label-large);
+    line-height: var(--lh-label-large);
+    color: var(--color-on-surface);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lab-card,
+    .lab-card__title {
+      transition: none;
+    }
+  }
+</style>
