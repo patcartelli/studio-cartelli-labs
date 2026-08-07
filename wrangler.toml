@@ -3,6 +3,33 @@ main = "./src/worker.ts"
 compatibility_date = "2026-04-08"
 compatibility_flags = ["nodejs_compat"]
 
+# Keep the *.workers.dev URL live alongside the routes below — useful for
+# isolating "is this a routing problem or a Worker problem" during the
+# cutover, and costs nothing to leave on. Must stay a top-level key, NOT
+# placed after a [[routes]] block — TOML would silently fold it into that
+# table as an (invalid, silently-dropped) route field. Learned the hard way
+# during the STC-205 Phase 2 cutover: it swallowed the exact-match /lab
+# route entirely with no error until deploying with --config directly.
+workers_dev = true
+
+# STC-205 Phase 2 cutover routes — REVERTED 2026-08-07: the cutover exposed
+# a real bug (Astro's built asset URLs are site-root-relative, e.g.
+# /_astro/BaseLayout.<hash>.css, not /lab/_astro/*, so requests for this
+# Worker's own CSS/JS fell outside the /lab and /lab/* patterns and were
+# caught by the OLD studio-cartelli Worker instead — 404s / wrong-hash
+# assets, unstyled page live in production). Needs astro.config.mjs
+# restructured (base: '/lab' + pages moved out of src/pages/lab/) before
+# re-attempting. Left here, commented, as the exact patterns that worked
+# for page routing so the next attempt doesn't have to rediscover them.
+#
+# [[routes]]
+# pattern = "studiocartelli.com/lab"
+# zone_name = "studiocartelli.com"
+#
+# [[routes]]
+# pattern = "studiocartelli.com/lab/*"
+# zone_name = "studiocartelli.com"
+
 [observability]
 enabled = true
 
