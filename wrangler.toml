@@ -14,12 +14,7 @@ LASTFM_USERNAME = "patcartelli"
 
 [[kv_namespaces]]
 binding = "LASTFM_CHART_CACHE"
-# TODO before first deploy: create a fresh KV namespace for this Worker —
-# do NOT reuse the main site's namespace ID. This repo's cache starts cold
-# by design (labs-split Phase 1) and self-warms on the cron above.
-#   wrangler kv namespace create LASTFM_CHART_CACHE
-# then paste the returned id below.
-id = "REPLACE_WITH_NEW_KV_NAMESPACE_ID"
+id = "51011fe993fc4e979dd9d05c10b26643"
 
 # Secrets (not stored here) — provision after the KV namespace exists:
 #   wrangler secret put LASTFM_API_KEY
