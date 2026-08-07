@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /work/
+Disallow: /unlock
+Disallow: /api/
+
+Sitemap: https://studiocartelli.com/sitemap-index.xml

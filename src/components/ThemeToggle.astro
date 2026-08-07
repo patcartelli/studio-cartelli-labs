@@ -1,0 +1,136 @@
+---
+// src/components/ThemeToggle.astro
+// Toggles between dark and light. Seeds from system preference on first visit.
+// Reads/writes localStorage key 'theme': 'dark' | 'light'
+---
+
+<button
+  class="theme-toggle"
+  aria-label="Toggle theme"
+  data-theme-toggle
+>
+  <svg class="theme-toggle__sun" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="5"/>
+    <line x1="12" y1="1" x2="12" y2="3"/>
+    <line x1="12" y1="21" x2="12" y2="23"/>
+    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+    <line x1="1" y1="12" x2="3" y2="12"/>
+    <line x1="21" y1="12" x2="23" y2="12"/>
+    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+  </svg>
+  <svg class="theme-toggle__moon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+  </svg>
+</button>
+
+<script>
+  // Safe localStorage accessors — guard against SecurityError in sandboxed contexts
+  function safeGetTheme(): string | null {
+    try { return localStorage.getItem('theme'); } catch { return null; }
+  }
+  function safeSetTheme(value: string) {
+    try { localStorage.setItem('theme', value); } catch {}
+  }
+  function safeRemoveTheme() {
+    try { localStorage.removeItem('theme'); } catch {}
+  }
+
+  function initThemeToggle(btn: HTMLButtonElement) {
+    const root = document.documentElement;
+
+    // Determine the current resolved theme
+    function getResolved(): 'dark' | 'light' {
+      const stored = safeGetTheme();
+      if (stored === 'dark') return 'dark';
+      if (stored === 'light') return 'light';
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    // Sync the icon and aria-label to the current resolved theme
+    function syncUI() {
+      const resolved = getResolved();
+      if (resolved === 'dark') {
+        btn.setAttribute('aria-label', 'Switch to light mode');
+      } else {
+        btn.setAttribute('aria-label', 'Switch to dark mode');
+      }
+      // Show moon when dark, sun when light
+      (btn.querySelector('.theme-toggle__moon') as HTMLElement).style.display = resolved === 'dark' ? 'block' : 'none';
+      (btn.querySelector('.theme-toggle__sun') as HTMLElement).style.display = resolved === 'light' ? 'block' : 'none';
+    }
+
+    // Apply theme to root element
+    function applyTheme(resolved: 'dark' | 'light') {
+      if (resolved === 'dark') {
+        root.dataset.theme = 'dark';
+      } else {
+        delete root.dataset.theme;
+      }
+    }
+
+    // Click: toggle between dark and light
+    btn.addEventListener('click', () => {
+      const next = getResolved() === 'dark' ? 'light' : 'dark';
+
+      // Add transition class — remove after animation completes
+      root.classList.add('theme-transitioning');
+      setTimeout(() => root.classList.remove('theme-transitioning'), 220);
+
+      safeSetTheme(next);
+      applyTheme(next);
+      syncUI();
+    });
+
+    syncUI();
+  }
+
+  // Init all toggles on the page (one in nav, one in footer)
+  document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]').forEach(initThemeToggle);
+
+  // Module-level: one listener regardless of how many toggle instances exist
+  const _mql = window.matchMedia('(prefers-color-scheme: dark)');
+  _mql.addEventListener('change', () => {
+    if (!safeGetTheme()) {
+      const resolved = _mql.matches ? 'dark' : 'light';
+      if (resolved === 'dark') {
+        document.documentElement.dataset.theme = 'dark';
+      } else {
+        delete document.documentElement.dataset.theme;
+      }
+      // Re-sync all toggle UIs
+      document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]').forEach((btn) => {
+        const r = _mql.matches ? 'dark' : 'light';
+        btn.setAttribute('aria-label', r === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+        (btn.querySelector('.theme-toggle__moon') as HTMLElement).style.display = r === 'dark' ? 'block' : 'none';
+        (btn.querySelector('.theme-toggle__sun') as HTMLElement).style.display = r === 'light' ? 'block' : 'none';
+      });
+    }
+  });
+</script>
+
+<style>
+  .theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-on-surface-dimmed);
+    padding: 0;
+    transition: color var(--motion-duration-fast) var(--motion-ease-out);
+  }
+
+  .theme-toggle:hover {
+    color: var(--color-on-surface);
+  }
+
+  .theme-toggle svg {
+    display: block;
+    flex-shrink: 0;
+  }
+</style>

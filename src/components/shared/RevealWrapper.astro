@@ -1,0 +1,15 @@
+---
+// src/components/shared/RevealWrapper.astro
+// Thin wrapper that marks elements for the scroll-reveal island (Phase 5).
+// No animation logic here — just sets the data attributes and CSS custom property.
+
+interface Props {
+  stagger?: number;
+}
+
+const { stagger = 0 } = Astro.props;
+---
+
+<div data-reveal="true" style={`--stagger-index: ${stagger}`}>
+  <slot />
+</div>

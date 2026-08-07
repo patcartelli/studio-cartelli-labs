@@ -1,0 +1,237 @@
+---
+// src/components/Footer.astro
+import ThemeToggle from './ThemeToggle.astro';
+
+interface Props {
+  wideMargin?: boolean;
+}
+
+const { wideMargin = false } = Astro.props;
+---
+
+<footer class="footer">
+  <div class={`container footer__inner${wideMargin ? ' footer__inner--wide-margin grid-12' : ''}`}>
+
+    <div class="footer__top">
+      <a href="/" aria-label="Studio Cartelli home" class="footer__logo">
+        <svg class="wave-logo wave-logo--footer" width="37" height="24" viewBox="-100 -100 2360 1598" aria-hidden="true" overflow="visible">
+          <path class="wave-top" fill="currentColor" />
+          <path class="wave-bottom" fill="currentColor" />
+        </svg>
+        <span class="footer__name" aria-hidden="true">studio cartelli</span>
+      </a>
+      <div class="footer__contact">
+        <p class="footer__contact-prompt">
+          Want to work together? Let's talk.
+          <a href="mailto:patrick@studiocartelli.com" class="footer__email">patrick@studiocartelli.com</a>
+        </p>
+        <a
+          href="mailto:patrick@studiocartelli.com"
+          class="pill-button pill-button--accent footer__cta"
+          data-email-copy="patrick@studiocartelli.com"
+        >
+          <span data-cta-label>Say Hey</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+
+    <div class="footer__bottom">
+      <nav class="footer__nav" aria-label="Footer navigation">
+        <div class="footer__nav-col">
+          <a href="/work">Work</a>
+          <a href="/about">About</a>
+          <a href="/lab">Labs</a>
+          <a href="https://blog.patcartelli.com" target="_blank" rel="noopener noreferrer">Blog</a>
+          <a href="/changelog">Changelog</a>
+        </div>
+        <div class="footer__nav-col">
+          <a href="https://www.instagram.com/studiocartelli" target="_blank" rel="noopener noreferrer">instagram</a>
+          <a href="https://www.linkedin.com/in/patrick-cartelli/" target="_blank" rel="noopener noreferrer">linkedin</a>
+        </div>
+      </nav>
+      <ThemeToggle />
+
+      <p class="footer__copyright">
+        &copy; <span id="footer-year"></span> All rights reserved
+      </p>
+    </div>
+
+  </div>
+</footer>
+
+<script>
+  const el = document.getElementById('footer-year');
+  if (el) el.textContent = new Date().getFullYear().toString();
+  import '../scripts/logo-wave.ts';
+  import '../scripts/email-copy-fallback.ts';
+</script>
+
+<style>
+  .footer {
+    position: relative;
+    z-index: 5;
+    background-color: var(--color-surface-footer);
+    color: var(--color-on-surface-footer);
+    margin-top: auto;
+  }
+
+  .footer__inner {
+    padding-block: var(--space-xl);
+    display: flex;
+    flex-direction: column;
+    row-gap: var(--space-lg);
+  }
+
+  /* Compound selector (.container.footer__inner--wide-margin) — specificity
+     (0,2,0) — reliably beats the base .footer__inner rule's `display: flex`
+     (0,1,0) regardless of scoped-style ordering. Only applied when Footer
+     is rendered with wideMargin (home page only, via BaseLayout's
+     navWideMargin prop — see the comment at that call site). Grid
+     scaffolding and per-tier bounds come from the shared .grid-12 utility
+     (STC-159); .footer__top/.footer__bottom span the full 12 columns and
+     keep their own internal flex arrangement untouched. */
+  .container.footer__inner--wide-margin {
+    display: grid;
+  }
+
+  .footer__inner--wide-margin > * {
+    grid-column: 1 / -1;
+  }
+
+  /* -- Top row: name + contact -- */
+  .footer__top {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .footer__logo {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    color: var(--color-on-surface-footer);
+    text-decoration: none;
+  }
+
+  .footer__name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-display-large);
+    line-height: var(--lh-display-large);
+    color: var(--color-on-surface-footer);
+    letter-spacing: -0.02em;
+    text-transform: lowercase;
+    user-select: none;
+    font-feature-settings: "ss03" 1, "ss09" 1, "onum" 1;
+  }
+
+  .footer__contact {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .footer__contact-prompt {
+    font-size: var(--text-body-large);
+    line-height: var(--lh-body-large);
+  }
+
+  .footer__email {
+    font-size: var(--text-body-large);
+    color: var(--color-on-surface-footer);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: opacity var(--motion-duration-base) var(--motion-ease-out);
+  }
+
+  .footer__email:hover {
+    opacity: 0.7;
+  }
+
+  /* Footer's background is fixed dark in both site themes (by design), but
+     --color-on-surface (the shared .pill-button:focus-visible outline color)
+     is theme-aware and turns dark in light mode — invisible against this
+     always-dark footer. Override to the footer's own light on-surface token,
+     which is calibrated to contrast against --color-surface-footer regardless
+     of site theme. */
+  .footer__cta:focus-visible {
+    outline-color: var(--color-on-surface-footer);
+  }
+
+  /* -- Bottom row: nav + copyright -- */
+  .footer__bottom {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    padding-top: var(--space-sm);
+  }
+
+  .footer__nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .footer__nav-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  @media (min-width: 840px) {
+    .footer__nav {
+      flex-direction: row;
+      gap: var(--space-2xl);
+    }
+  }
+
+  .footer__nav a {
+    font-size: var(--text-body-large);
+    color: var(--color-footer-link);
+    transition: opacity var(--motion-duration-base) var(--motion-ease-out);
+  }
+
+  .footer__nav a:hover {
+    opacity: 0.7;
+  }
+
+  .footer__copyright {
+    font-size: var(--text-body-medium);
+    line-height: var(--lh-body-medium);
+    color: var(--color-on-surface-footer-copyright);
+  }
+
+  /* Theme toggle inherits footer text color for proper contrast on dark bg */
+  .theme-toggle {
+    color: var(--color-on-surface-footer);
+  }
+
+  .theme-toggle:hover {
+    color: var(--color-on-surface-footer);
+    opacity: 0.7;
+  }
+
+  /* -- Wide screen layout -- */
+  @media (min-width: 840px) {
+    .footer__top {
+      flex-direction: row;
+      align-items: baseline;
+      gap: var(--space-lg);
+    }
+
+    .footer__bottom {
+      flex-direction: row;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+
+    .footer__copyright {
+      margin-left: auto;
+    }
+  }
+</style>

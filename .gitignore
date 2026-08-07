@@ -1,0 +1,43 @@
+# build output
+dist/
+# generated types
+.astro/
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# environment variables
+.env
+.env.local
+.env.production
+
+# macOS-specific files
+.DS_Store
+
+# jetbrains setting folder
+.idea/
+
+# playwright test artifacts
+test-results/
+playwright-report/
+
+# cloudflare local runtime secrets
+.dev.vars
+
+# wrangler / miniflare local state
+.wrangler/
+
+# Licensed fonts: the main studiocartelli.com site self-hosts a paid,
+# non-redistributable commercial font family. Never commit font binaries
+# to this public repo — see src/styles/global.css for the fallback stack
+# this repo uses instead (labs-split Phase 1, D-03).
+public/fonts/*.woff
+public/fonts/*.woff2
+public/fonts/*.otf
+public/fonts/*.ttf

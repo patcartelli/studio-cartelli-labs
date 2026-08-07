@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - '**/*.md'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - '**/*.md'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: 'package.json'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx astro check
+
+  playwright:
+    name: Playwright
+    # Runs natively on the host, not in the Playwright container — this
+    # app's prod build/preview use the Cloudflare Worker runtime
+    # (@astrojs/cloudflare starts a local miniflare/workerd proxy for
+    # prerender bindings), which doesn't play well with the container.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: 'package.json'
+          cache: 'npm'
+      - run: npm ci
+      - name: Fetch chromium from Playwright image (no CDN download)
+        run: |
+          docker create --name pw mcr.microsoft.com/playwright:v1.59.1-noble
+          docker cp pw:/ms-playwright "$PLAYWRIGHT_BROWSERS_PATH"
+          docker rm pw
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/ms-playwright
+      - name: Install Playwright OS deps (chromium libs only)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
+            libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
+            libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 \
+            libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
+            libfontconfig1 libfreetype6 fonts-liberation
+      - name: Run Playwright tests (all viewports)
+        run: npx playwright test
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/ms-playwright
+      - name: Upload Playwright report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

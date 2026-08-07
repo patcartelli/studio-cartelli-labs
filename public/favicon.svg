@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 2160 2160" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g transform="matrix(1,0,0,1,-7386.878835,-2831.91469)">
+        <g id="Favicon" transform="matrix(1,0,0,1,-1374.313043,2831.91469)">
+            <rect x="8761.192" y="0" width="2160" height="2160" style="fill:none;"/>
+            <g transform="matrix(0.924951,0,0,3.842146,5896.366986,-3375.739509)">
+                <rect x="3097.27" y="878.608" width="2335.258" height="562.186" style="fill:rgb(24,24,28);"/>
+            </g>
+            <g transform="matrix(4.43538,0,0,3.528849,5600.147227,-3684.132943)">
+                <path d="M827.709,1350.004L827.709,1245.631L1084.662,1245.638L827.709,1350.004ZM1083.731,1454.475L827.709,1454.475L827.709,1350.168L1083.731,1454.475Z" style="fill:white;"/>
+            </g>
+        </g>
+    </g>
+</svg>

@@ -1,0 +1,11 @@
+---
+import { UPTIME_MARKERS, type UptimeMarkerKey } from '../lib/uptime-markers';
+
+interface Props {
+  marker: UptimeMarkerKey;
+}
+
+const { marker } = Astro.props;
+const value = UPTIME_MARKERS[marker];
+---
+<span hidden data-uptime-marker={value}>{value}</span>

@@ -1,0 +1,17 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  // Scoped explicitly instead of "**/*" so a new top-level directory cannot
+  // silently enter `astro check`'s scope. Add new roots here deliberately.
+  "include": [
+    ".astro/**/*.d.ts",
+    "src/**/*",
+    "tests/**/*",
+    "scripts/**/*",
+    "astro.config.mjs",
+    "playwright.config.ts"
+  ],
+  "exclude": ["dist", "node_modules"],
+  "compilerOptions": {
+    "types": ["@cloudflare/workers-types"]
+  }
+}

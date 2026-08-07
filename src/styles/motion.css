@@ -1,0 +1,35 @@
+/* src/styles/motion.css */
+/* Motion design tokens: duration, easing, and delay */
+
+:root {
+  /* Duration tokens */
+  --motion-duration-instant: 0ms;
+  --motion-duration-fast: 150ms;
+  --motion-duration-base: 250ms;
+  --motion-duration-moderate: 400ms;
+  --motion-duration-slow: 600ms;
+
+  /* Easing tokens */
+  --motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --motion-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --motion-ease-linear: linear;
+
+  /* Delay tokens */
+  --motion-delay-none: 0ms;
+  --motion-delay-stagger-sm: 60ms;
+  --motion-delay-stagger-md: 120ms;
+  --motion-delay-initial: 200ms;
+}
+
+/* Reduce motion support */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-instant: 0ms;
+    --motion-duration-fast: 0ms;
+    --motion-duration-base: 0ms;
+    --motion-duration-moderate: 0ms;
+    --motion-duration-slow: 0ms;
+  }
+}

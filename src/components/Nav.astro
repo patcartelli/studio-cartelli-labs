@@ -1,0 +1,332 @@
+---
+// src/components/Nav.astro
+import ThemeToggle from './ThemeToggle.astro';
+
+interface Props {
+  wideMargin?: boolean;
+}
+
+const { wideMargin = false } = Astro.props;
+const { pathname } = Astro.url;
+---
+
+<nav aria-label="Main navigation" class="nav" data-nav="true">
+  <div class={`container nav__inner${wideMargin ? ' nav__inner--wide-margin grid-12' : ''}`}>
+    <a href="/" aria-label="Studio Cartelli home" class="nav__logo">
+      <svg class="wave-logo" width="37" height="24" viewBox="-100 -100 2360 1598" aria-hidden="true" overflow="visible" style="display:block;flex-shrink:0;">
+        <path class="wave-top" fill="currentColor" />
+        <path class="wave-bottom" fill="currentColor" />
+      </svg>
+      <span class="nav__logo-name" aria-hidden="true">Studio Cartelli</span>
+    </a>
+
+    <div class="nav__links">
+      <a href="/about" class="nav__link" aria-current={pathname === '/about' ? 'page' : undefined}>About</a>
+      <a href="https://blog.patcartelli.com" class="nav__link" target="_blank" rel="noopener noreferrer">Blog</a>
+      <span class="nav__divider" aria-hidden="true"></span>
+      {/* STC-170 Wireframe-18: About · Blog · | · theme · outlined Say Hey (icon-leading) */}
+      <ThemeToggle />
+      <a
+        href="mailto:patrick@studiocartelli.com"
+        class="pill-button pill-button--outlined nav__cta"
+        data-email-copy="patrick@studiocartelli.com"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+        <span data-cta-label>Say Hey</span>
+      </a>
+      <button class="nav__menu-toggle" aria-label="Open menu" tabindex="0" aria-expanded="false" aria-controls="nav-overlay">
+        <span aria-hidden="true">+</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="nav-overlay" class="nav__overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Navigation menu">
+    <button class="nav__overlay-close" aria-label="Close navigation menu" tabindex="-1">×</button>
+    <nav class="nav__overlay-links" aria-label="Mobile navigation">
+      <a href="/" class="nav__overlay-link" tabindex="-1">Home</a>
+      <a href="/about" class="nav__overlay-link" tabindex="-1">About</a>
+      <a href="https://blog.patcartelli.com" class="nav__overlay-link" tabindex="-1" target="_blank" rel="noopener noreferrer">Blog</a>
+    </nav>
+  </div>
+</nav>
+
+<script>
+  import '../scripts/nav-overlay.ts';
+  import '../scripts/logo-wave.ts';
+  import '../scripts/email-copy-fallback.ts';
+</script>
+
+<style>
+  .nav {
+    background-color: var(--color-surface);
+    border-bottom: 1px solid transparent;
+  }
+
+  .nav__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-block: var(--space-sm);
+  }
+
+  .nav__logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    flex-shrink: 0;
+  }
+
+  .nav__logo-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-title-large);
+    line-height: var(--lh-title-large);
+    color: var(--color-on-surface);
+    white-space: nowrap;
+  }
+
+  .nav__logo img {
+    display: block;
+  }
+
+  .nav__links {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+  }
+
+  /* STC-170 — Wireframe-18: About/Blog as semi-bold full-contrast text links
+     (not dimmed), sitting ahead of the divider / theme / outlined CTA cluster. */
+  .nav__link {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: var(--text-label-large);
+    line-height: var(--lh-label-large);
+    color: var(--color-on-surface);
+    transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
+  }
+
+  .nav__link:hover {
+    opacity: 0.7;
+  }
+
+  .nav__divider {
+    /* flex-shrink: 0 matters: inside the wide-margin grid (STC-91) the
+       links cluster is narrower than its content, and a shrinkable 1px
+       divider is the only flex item that can give — it collapses to 0. */
+    flex-shrink: 0;
+    width: 1px;
+    height: 20px;
+    background-color: var(--color-border);
+  }
+
+  .nav__cta {
+    flex-shrink: 0;
+  }
+
+  /* Compound selector (.container.nav__inner--wide-margin) is deliberate —
+     its specificity (0,2,0) must exceed the shared .container rule's (0,1,0)
+     regardless of stylesheet load order between global.css and this
+     component's scoped styles. Only applied when Nav is rendered with
+     wideMargin (home page only, via BaseLayout's navWideMargin prop).
+     Grid scaffolding and per-tier bounds now come from the shared
+     .grid-12 utility (STC-159); this file only places the logo and links
+     within it. */
+  @media (max-width: 599px) {
+    /* The utility's Compact column-gap (var(--grid-gap)) is a *grid* gap
+       meant for a 4-column layout — applied to the still-flex nav below
+       600px it would add 16px of unwanted minimum separation between the
+       logo and the CTA, which already run close to the viewport edge. */
+    .container.nav__inner--wide-margin {
+      column-gap: normal;
+    }
+  }
+
+  @media (min-width: 600px) and (max-width: 839px) {
+    /* M3 Medium (STC-91) — flush-left shift: logo spans 1/5 (was 2/6),
+       same 4-column width. Links area widened to 4/9 to fully contain the
+       cluster's ~445px flex-shrink:0 min-content without overlapping the
+       logo; justify-self: end keeps it hugging the right margin edge
+       exactly as the flex layout did. */
+    .container.nav__inner--wide-margin {
+      display: grid;
+    }
+
+    .nav__inner--wide-margin .nav__logo {
+      grid-column: 1 / 5;
+    }
+
+    .nav__inner--wide-margin .nav__links {
+      grid-column: 4 / 9;
+      justify-self: end;
+    }
+  }
+
+  @media (min-width: 840px) {
+    /* M3 Expanded/Large/Extra-large (STC-91/159) — one block now covers
+       all three desktop tiers, since the utility supplies identical
+       12-column scaffolding and per-tier bounds at each. Logo spans 1/5
+       (was 2/6 at Expanded, 2/9 at Large/XL) — flush-left frees a column,
+       which is what pays for widening the links area to 5/13 (was 6/13 or
+       7/13) with room to spare above its ~485px min-content. The
+       tightened gap (2px below --space-sm) closes the 840px links-overflow
+       bug this file has always guarded against. */
+    .container.nav__inner--wide-margin {
+      display: grid;
+    }
+
+    .nav__inner--wide-margin .nav__logo {
+      grid-column: 1 / 5;
+    }
+
+    .nav__inner--wide-margin .nav__links {
+      grid-column: 5 / 13;
+      justify-self: end;
+      gap: calc(var(--space-sm) - 2px);
+    }
+  }
+
+  .nav__menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: var(--text-title-medium);
+    line-height: var(--lh-title-medium);
+    padding: 4px;
+    color: var(--color-on-surface);
+    position: relative;
+    z-index: 101;
+  }
+
+  /* ---- Mobile overlay ---- */
+  .nav__overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background-color: var(--color-surface);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-lg);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-duration-moderate) var(--motion-ease-out);
+  }
+
+  .nav__overlay.is-open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .nav__overlay-close {
+    position: absolute;
+    top: var(--space-sm);
+    right: var(--space-sm);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: var(--text-headline-medium);
+    line-height: var(--lh-headline-medium);
+    padding: var(--space-sm);
+    color: var(--color-on-surface);
+    transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
+  }
+
+  .nav__overlay-close:hover {
+    opacity: 0.6;
+  }
+
+  .nav__overlay-links {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-lg);
+  }
+
+  .nav__overlay-link {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-display-large);
+    line-height: var(--lh-display-large);
+    color: var(--color-on-surface);
+    opacity: 0;
+    transition: opacity var(--motion-duration-fast) var(--motion-ease-out);
+  }
+
+  .nav__overlay-link:hover {
+    opacity: 0.6;
+  }
+
+  /* Stagger entrance when overlay opens */
+  .nav__overlay.is-open .nav__overlay-link {
+    animation: navLinkEnter var(--motion-duration-base) var(--motion-ease-out) both;
+  }
+
+  .nav__overlay.is-open .nav__overlay-link:nth-child(1) {
+    animation-delay: var(--motion-delay-stagger-sm);
+  }
+
+  .nav__overlay.is-open .nav__overlay-link:nth-child(2) {
+    animation-delay: var(--motion-delay-stagger-md);
+  }
+
+  .nav__overlay.is-open .nav__overlay-link:nth-child(3) {
+    animation-delay: calc(var(--motion-delay-stagger-md) + var(--motion-delay-stagger-sm));
+  }
+
+  @keyframes navLinkEnter {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (max-width: 599px) {
+    .nav__link,
+    .nav__divider {
+      display: none;
+    }
+
+    /* :global() required — .theme-toggle lives in the ThemeToggle child
+       component, which Astro's scoped-style data attribute doesn't reach */
+    .nav__links :global(.theme-toggle) {
+      display: none;
+    }
+
+    /* At 22px the wordmark + CTA pill overflow 375px viewports */
+    .nav__logo-name {
+      font-size: var(--text-title-medium);
+      line-height: var(--lh-title-medium);
+    }
+
+    .nav__links {
+      gap: var(--space-sm);
+    }
+
+    .nav__menu-toggle {
+      display: block;
+    }
+  }
+
+  /* Explicit dark mode overrides for overlay — ensures correct contrast
+     regardless of token cascade order in production builds */
+  :root[data-theme="dark"] .nav__overlay {
+    background-color: var(--color-surface);
+  }
+
+  :root[data-theme="dark"] .nav__overlay-link,
+  :root[data-theme="dark"] .nav__overlay-close {
+    color: var(--color-on-surface);
+  }
+</style>
