@@ -3,15 +3,22 @@
 // SSR: fetches live data from Last.fm on every request.
 export const prerender = false;
 
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import UptimeMarker from '../../components/UptimeMarker.astro';
-import { getCachedTopAlbums, getCachedTopArtists, getCachedTopTracks } from '../../lib/lastfm-cache';
-import type { Album, Artist, Track } from '../../lib/lastfm';
-import { lastfmGridCoverUrl } from '../../lib/lastfm-image-url';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import UptimeMarker from '../components/UptimeMarker.astro';
+import { getCachedTopAlbums, getCachedTopArtists, getCachedTopTracks } from '../lib/lastfm-cache';
+import type { Album, Artist, Track } from '../lib/lastfm';
+import { lastfmGridCoverUrl } from '../lib/lastfm-image-url';
 import { env } from 'cloudflare:workers';
 const _env = env as unknown as { LASTFM_CHART_CACHE: KVNamespace };
 const kv = _env.LASTFM_CHART_CACHE;
-import { changelog } from '../../data/changelog';
+import { changelog } from '../data/changelog';
+
+// STC-205 Phase 2 fix: `base: '/lab'` moves this repo's own /api/* routes
+// under /lab/api/* too. import.meta.env.BASE_URL resolved to "/lab" with
+// NO trailing slash in this build (confirmed live — naive concatenation
+// produced "/labapi/..." and 404'd) — normalize explicitly rather than
+// assume either way.
+const apiBase = import.meta.env.BASE_URL.replace(/\/$/, '') + '/';
 
 const chartChangelog = changelog.filter((e) => e.project === 'chart');
 
@@ -138,7 +145,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
                   <div class="chart__tile chart__shimmer">
                     {album.imageUrl ? (
                       <img
-                        src={`/api/proxy-image?url=${encodeURIComponent(lastfmGridCoverUrl(album.imageUrl))}`}
+                        src={`${apiBase}api/proxy-image?url=${encodeURIComponent(lastfmGridCoverUrl(album.imageUrl))}`}
                         crossorigin="anonymous"
                         alt={`${album.name} by ${album.artist}`}
                         width="174"
@@ -187,7 +194,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
                   <div class="chart__tile chart__shimmer">
                     {track.imageUrl ? (
                       <img
-                        src={`/api/proxy-image?url=${encodeURIComponent(lastfmGridCoverUrl(track.imageUrl))}`}
+                        src={`${apiBase}api/proxy-image?url=${encodeURIComponent(lastfmGridCoverUrl(track.imageUrl))}`}
                         crossorigin="anonymous"
                         alt={`${track.name} by ${track.artist}`}
                         width="174"
@@ -1248,7 +1255,11 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
 </style>
 
 <script>
-  import { lastfmListThumbUrl, listUsesInlineThumb } from '../../lib/lastfm-image-url';
+  import { lastfmListThumbUrl, listUsesInlineThumb } from '../lib/lastfm-image-url';
+
+  // STC-205 Phase 2 fix: base:'/lab' moves this repo's own /api/* routes
+  // under /lab/api/* too — see the matching frontmatter comment above.
+  const apiBase = import.meta.env.BASE_URL.replace(/\/$/, '') + '/';
 
   declare global {
     interface Window {
@@ -1675,7 +1686,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);
     let extras: Record<string, { websiteUrl: string | null; imageUrl: string | null }>;
     try {
-      const res = await fetch('/api/artist-websites', {
+      const res = await fetch(`${apiBase}api/artist-websites`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ artists: names }),
@@ -2015,7 +2026,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     (async () => {
       try {
         const res = await fetch(
-          `/api/chart-list?view=${encodeURIComponent(view)}&offset=0&limit=20`,
+          `${apiBase}api/chart-list?view=${encodeURIComponent(view)}&offset=0&limit=20`,
           { signal: controller.signal }
         );
         clearTimeout(timeoutId);
@@ -2086,7 +2097,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);
     let websites: Record<string, { websiteUrl: string | null; imageUrl: string | null }> = {};
     try {
-      const res = await fetch('/api/artist-websites', {
+      const res = await fetch(`${apiBase}api/artist-websites`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ artists: uniqueArtists }),
@@ -2156,7 +2167,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);
     let extras: Record<string, { websiteUrl: string | null; imageUrl: string | null }> = {};
     try {
-      const res = await fetch('/api/artist-websites', {
+      const res = await fetch(`${apiBase}api/artist-websites`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ artists: uniqueNames }),
@@ -2249,7 +2260,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);
     let websites: Record<string, { websiteUrl: string | null; imageUrl: string | null }> = {};
     try {
-      const res = await fetch('/api/artist-websites', {
+      const res = await fetch(`${apiBase}api/artist-websites`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ artists: uniqueArtists }),
@@ -2306,7 +2317,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);
     try {
-      const res = await fetch('/api/chart-list?view=albums&offset=0&limit=20', { signal: controller.signal });
+      const res = await fetch(`${apiBase}api/chart-list?view=albums&offset=0&limit=20`, { signal: controller.signal });
       clearTimeout(timeoutId);
       if (!res.ok) return; // skeleton rows remain (acceptable this phase)
       const data = await res.json() as ChartListResponse;
@@ -2636,7 +2647,7 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
     errorRegion.hidden = true;
 
     const offset = listOffsets[view] ?? 20;
-    const url = `/api/chart-list?view=${encodeURIComponent(view)}&offset=${offset}&limit=20`;
+    const url = `${apiBase}api/chart-list?view=${encodeURIComponent(view)}&offset=${offset}&limit=20`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);

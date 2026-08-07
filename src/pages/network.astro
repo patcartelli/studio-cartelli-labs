@@ -3,10 +3,10 @@
 // SSR: serves network graph data from KV cache (getCachedNetworkData).
 export const prerender = false;
 
-import BaseLayout from '../../layouts/BaseLayout.astro';
-import type { Artist } from '../../lib/lastfm';
-import { getCachedNetworkData } from '../../lib/network-cache';
-import { changelog } from '../../data/changelog';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import type { Artist } from '../lib/lastfm';
+import { getCachedNetworkData } from '../lib/network-cache';
+import { changelog } from '../data/changelog';
 
 const networkChangelog = changelog.filter((e) => e.project === 'network');
 

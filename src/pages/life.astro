@@ -4,7 +4,7 @@
 // Statically prerendered (output:'server' repo default is SSR).
 export const prerender = true;
 
-import BaseLayout from '../../layouts/BaseLayout.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
 ---
 
 <BaseLayout
@@ -118,7 +118,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     setCell,
     countLive,
     type LifeGrid,
-  } from '../../lib/life';
+  } from '../lib/life';
 
   const CELL = 11; // CSS px per cell
   const DEFAULT_DENSITY = 0.28;
