@@ -6,8 +6,14 @@ export const prerender = false;
 
 import type { APIRoute } from 'astro';
 
+// Explicit hosts only — deliberately not a `*.freetls.fastly.net` wildcard,
+// which would hand SSRF reach to every Fastly customer on that shared domain.
 const ALLOWED_HOSTS = new Set([
   'lastfm.freetls.fastly.net',
+  // Last.fm serves cover art from both the bare and the `-img` host, and which
+  // one comes back is upstream's choice. Missing this one 400'd every cover on
+  // /lab/chart in production.
+  'lastfm-img.freetls.fastly.net',
   'coverartarchive.org', // 307 → archive.org CDN followed server-side
 ]);
 

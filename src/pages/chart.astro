@@ -1435,8 +1435,20 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
               const album = tile.querySelector('.chart__overlay-album')?.textContent ?? '';
               let drawable: HTMLImageElement | null = null;
               if (img) {
+                // `complete` means "no longer loading", NOT "loaded successfully" —
+                // it is true for broken images too, and a broken <img> makes
+                // ctx.drawImage throw InvalidStateError. That throw escaped the
+                // whole build and short-circuited the cascade to finish('failed')
+                // before the share and modal tiers, so one dead cover URL took the
+                // entire copy feature down. naturalWidth is the load-success test.
+                // A broken image will never resolve, so skip the wait and fall
+                // straight through to the gray cell (D-05).
                 if (img.complete) {
-                  drawable = img;
+                  if (img.naturalWidth > 0) {
+                    drawable = img;
+                  } else {
+                    console.warn('[chart] tile image broken, using gray cell', tileIndex, img.currentSrc || img.src);
+                  }
                 } else {
                   // WR-02: hoist `cleanup` so it is reachable from the OUTER
                   // try/finally. The inner promise's natural `{ once: true }`
@@ -1495,9 +1507,21 @@ const fetchedAtIso = new Date(fetchedAt).toISOString();
           const x = col * TILE_SIZE;
           const y = row * TILE_SIZE;
 
+          // Defense in depth: the naturalWidth guard above should mean every
+          // `img` reaching here is drawable, but drawImage is the one call in
+          // this loop that can throw, and a throw here rejects the whole build
+          // and kills the share + modal tiers of the cascade. A single bad tile
+          // degrades to a gray cell instead of costing the user the feature.
+          let drawn = false;
           if (img) {
-            ctx.drawImage(img, x, y, TILE_SIZE, TILE_SIZE);
-          } else {
+            try {
+              ctx.drawImage(img, x, y, TILE_SIZE, TILE_SIZE);
+              drawn = true;
+            } catch (err) {
+              console.warn('[chart] tile draw failed, using gray cell', i, err);
+            }
+          }
+          if (!drawn) {
             ctx.fillStyle = '#e5e5e5';
             ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
           }
