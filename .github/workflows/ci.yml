@@ -65,6 +65,35 @@ jobs:
             libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 \
             libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
             libfontconfig1 libfreetype6 fonts-liberation
+      # Makes /lab/chart's tests actually run here. CI has no LASTFM_API_KEY, so
+      # the page's SSR fetch throws, it renders empty, and every data-gated test
+      # in tests/lab-chart.spec.ts skips — while the job stays green. A green
+      # check means nothing for that page. LASTFM_FIXTURE swaps in a
+      # deterministic captured payload (src/lib/lastfm-fixture.ts) with no
+      # credentials and no network.
+      #
+      # Written to .dev.vars, not a step-level `env:`: playwright.config.ts
+      # runs `npm run build:preview && npm run preview` under CI, which starts
+      # a workerd/miniflare runtime — that runtime's env (what chart.astro
+      # reads via cloudflare:workers) is populated from .dev.vars, not from
+      # the GitHub Actions step environment. A step-level env var would set
+      # this only on the Playwright process and the fixture would silently
+      # never activate.
+      #
+      # Uses `>` (truncate), not `>>`: unlike studio-cartelli, this workflow
+      # has no preceding step that writes .dev.vars, and .dev.vars is
+      # gitignored so the CI checkout never has one to begin with. If a future
+      # step is added that writes .dev.vars BEFORE this one, this must become
+      # `>>` or it will silently destroy that step's values.
+      #
+      # Deliberately unconditional and deliberately NOT gated on a secret:
+      # - a real LASTFM_API_KEY would tie CI to Last.fm's uptime and rate
+      #   limits and still leave fork PRs uncovered;
+      # - referencing a secret in a step `if:` has silently killed workflows
+      #   in the sibling studio-cartelli repo before, so this avoids that
+      #   shape entirely.
+      - name: Enable deterministic Last.fm fixture for chart tests
+        run: printf 'LASTFM_FIXTURE="1"\n' > .dev.vars
       - name: Run Playwright tests (all viewports)
         run: npx playwright test
         env:
