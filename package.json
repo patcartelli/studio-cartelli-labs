@@ -25,9 +25,9 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.8",
-    "@axe-core/playwright": "^4.11.2",
+    "@axe-core/playwright": "4.11.2",
     "@cloudflare/workers-types": "^5.20260801.1",
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "1.59.1",
     "@types/d3": "^7.4.3",
     "@types/node": "^25.5.2",
     "miniflare": "^4.20260507.0",
