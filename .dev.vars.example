@@ -1,3 +1,11 @@
 LASTFM_API_KEY=changeme
 LASTFM_USERNAME=patcartelli
 TADB_API_KEY=changeme
+
+# CI-only. Set to "1" to swap the live Last.fm API for the deterministic
+# payloads captured in src/lib/fixtures/, so the chart page renders with no
+# API credentials present. Set solely by the Playwright CI step — never set
+# this locally unless you are deliberately reproducing a CI run, and never
+# add it to wrangler.toml's [vars] block or provision it as a Worker secret.
+# Leave unset for normal local dev.
+# LASTFM_FIXTURE=1

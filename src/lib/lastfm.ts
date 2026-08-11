@@ -2,6 +2,8 @@
 // Minimal Last.fm API client for the /lab/chart page.
 // Server-only: reads API key from Cloudflare runtime env. Do not import from client code.
 
+import { isFixtureMode, getFixturePayload } from './lastfm-fixture';
+
 export interface Album {
   rank: number;
   name: string;
@@ -37,6 +39,8 @@ interface LastfmTrackRaw {
 }
 
 interface LastfmEnv {
+  /** '1' swaps the live API for the deterministic fixture — CI only. */
+  LASTFM_FIXTURE?: string;
   LASTFM_API_KEY?: string;
   LASTFM_USERNAME?: string;
 }
@@ -72,6 +76,12 @@ async function fetchLastfm(
   params: Record<string, string>,
   env: LastfmEnv
 ): Promise<unknown> {
+  // Fixture check precedes the credential guard on purpose — "no API key" is
+  // exactly the CI condition this stands in for. See lastfm-fixture.ts.
+  if (isFixtureMode(env)) {
+    return getFixturePayload(params.method, Number(params.limit) || 50);
+  }
+
   const apiKey = env.LASTFM_API_KEY;
   if (!apiKey) {
     throw new Error('Last.fm API key missing: LASTFM_API_KEY must be set');
@@ -101,6 +111,12 @@ async function fetchLastfm(
  * Throws on network error, non-2xx response, API error, or malformed payload.
  */
 export async function getTopAlbums(env: LastfmEnv, limit: number): Promise<Album[]> {
+  // Fixture short-circuit — see fetchLastfm above. getTopAlbums predates that
+  // helper and still issues its own fetch, so it needs its own check.
+  if (isFixtureMode(env)) {
+    return parseTopAlbums(getFixturePayload('user.getTopAlbums', limit) as LastfmResponse);
+  }
+
   const apiKey = env.LASTFM_API_KEY;
   const username = env.LASTFM_USERNAME;
 
@@ -127,6 +143,17 @@ export async function getTopAlbums(env: LastfmEnv, limit: number): Promise<Album
     throw new Error(`Last.fm API error ${data.error}: ${data.message ?? 'unknown'}`);
   }
 
+  return parseTopAlbums(data);
+}
+
+/**
+ * Map a raw getTopAlbums payload to Album[].
+ *
+ * Split out of getTopAlbums so the fixture path runs the identical parsing —
+ * a fixture that returned pre-parsed objects would leave this mapping (rank
+ * coercion, artist string-vs-object, extralarge image selection) untested in CI.
+ */
+function parseTopAlbums(data: LastfmResponse): Album[] {
   const rawAlbums = data.topalbums?.album;
   if (!Array.isArray(rawAlbums)) {
     throw new Error('Last.fm response malformed: topalbums.album missing');
