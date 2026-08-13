@@ -1,7 +1,8 @@
 ---
 // src/components/lab/LabCard.astro
 // Compact experiment card for homepage lab grid and /lab index.
-// Thumbnail slot accepts an optional image; placeholder shown until STC-186/187.
+// Thumbnail slot accepts an optional image. The typographic placeholder is the
+// standing fallback for entries with no artwork — currently only `life`.
 import type { LabEntry } from '../../data/lab-entries.ts';
 
 interface Props {
