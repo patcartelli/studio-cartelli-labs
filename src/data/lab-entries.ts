@@ -11,7 +11,21 @@ export interface LabEntry {
   /** Visual CTA chip label inside the card link. */
   ctaLabel: string;
   href: string;
-  /** Optional thumbnail path — STC-186/187 will populate. */
+  /**
+   * Optional thumbnail — a **final, base-prefixed** URL (`/lab/images/...`),
+   * consistent with how `href` values in this file are stored.
+   *
+   * The `/lab` prefix is not optional. `base: '/lab'` does not rewrite
+   * hand-written string literals (see astro.config.mjs), so a bare
+   * `/images/...` would resolve outside the `studiocartelli.com/lab*` Workers
+   * Route and be served by the MAIN studio-cartelli Worker instead. That path
+   * happens to exist there today, so it would appear to work — right up until
+   * the main repo drops its lab assets, at which point it breaks in production
+   * only. Keep the prefix.
+   *
+   * Entries without artwork omit this and fall back to the typographic
+   * placeholder in LabCard.
+   */
   thumbnail?: string;
   /** When false, entry is omitted from the homepage lab grid. */
   showOnHomepage?: boolean;
@@ -25,6 +39,7 @@ export const labEntries: LabEntry[] = [
     overline: 'Last.fm • Personal Listening',
     ctaLabel: 'View Experiment',
     href: '/lab/chart',
+    thumbnail: '/lab/images/home/lab-chart.avif',
     showOnHomepage: true,
   },
   {
@@ -34,6 +49,7 @@ export const labEntries: LabEntry[] = [
     overline: 'Wikidata • Artist Network',
     ctaLabel: 'View Experiment',
     href: '/lab/network',
+    thumbnail: '/lab/images/home/lab-network.avif',
     showOnHomepage: true,
   },
   {
