@@ -13,7 +13,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('OG meta tags', () => {
   const publicPages = [
-    { path: '/lab', ogTitle: 'Lab', descContains: 'experiments and data' },
+    { path: '/lab', ogTitle: 'WRONG', descContains: 'experiments and data' },
     { path: '/lab/chart', ogTitle: 'Chart', descContains: 'top albums' },
     { path: '/lab/network', ogTitle: 'Network', descContains: 'network graph' },
   ];
