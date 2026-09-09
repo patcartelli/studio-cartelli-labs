@@ -142,14 +142,21 @@ test('warmNetworkCache resumably builds network:1month across multiple invocatio
     const finalProgress = await kv.get('network:warm:1month', { type: 'json' });
     expect(finalProgress).toBeNull();
 
-    // Tick 4: network:1month is now fresh -- warmNetworkCache must no-op
-    // (no re-fetch of artists).
-    const callsBeforeNoop = fetchCallCount;
+    // Tick 4: network:1month is now fresh, so warmNetworkCache moves on to
+    // the next period in NETWORK_WARM_PERIODS instead of no-op-ing (STC-332
+    // extended warming to all periods, not just 1month) -- but it must never
+    // re-touch the now-fresh network:1month while doing so.
+    const callsBeforeNextPeriod = fetchCallCount;
     await expect(warmNetworkCache(mockEnv, CHUNK_SIZE)).resolves.toBeUndefined();
-    expect(fetchCallCount).toBe(callsBeforeNoop);
+    expect(fetchCallCount).toBeGreaterThan(callsBeforeNextPeriod);
 
     const unchangedValue = await kv.get('network:1month', { type: 'json' });
     expect(unchangedValue).toEqual(value);
+
+    // The next period (7day, per NETWORK_WARM_PERIODS order) should now have
+    // in-progress build state.
+    const nextPeriodProgress = await kv.get('network:warm:7day', { type: 'json' });
+    expect(nextPeriodProgress).not.toBeNull();
   } finally {
     globalThis.fetch = originalFetch;
     await mf?.dispose();
