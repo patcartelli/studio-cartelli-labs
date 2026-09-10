@@ -165,6 +165,41 @@ async function advancePeriodBuild(
 }
 
 /**
+ * STC-340: enforce the invariant that every artist handed to the page has a
+ * matching allTags/allSimilar entry.
+ *
+ * NetworkRawData is three parallel arrays indexed by artist position, but the
+ * resumable build fills `artists` all at once (INIT) and `allTags`/`allSimilar`
+ * a chunk at a time (CHUNK). So in-progress progress state legitimately holds
+ * 100 artists next to only `cursor` tag entries. Serving that straight through
+ * made network.astro render 100 nodes where only the first `cursor` had any
+ * genre tags at all (it reads `allTags[i] ?? []`) -- tags present on some
+ * nodes, missing on others, identically on every load. That was the same
+ * user-visible symptom as the pre-STC-332 budget overrun, which silently
+ * emptied the tail of `allTags` for the same reason: partial enrichment
+ * presented as complete.
+ *
+ * Truncating to the enriched prefix means a cold-building period renders a
+ * smaller graph that grows one chunk per tick, rather than a full-size graph
+ * that is quietly wrong. Well-formed finalized data has equal lengths, so this
+ * is a no-op on the happy path.
+ */
+function withEnrichedArtistsOnly(data: NetworkRawData): NetworkRawData {
+  const enriched = Math.min(data.artists.length, data.allTags.length, data.allSimilar.length);
+  if (enriched === data.artists.length) return data;
+
+  const artists = data.artists.slice(0, enriched);
+  // Influence links reference artist names; network.astro drops any whose
+  // endpoints aren't in the served artist list, so they need no filtering here.
+  return {
+    artists,
+    allTags: data.allTags.slice(0, enriched),
+    allSimilar: data.allSimilar.slice(0, enriched),
+    influences: data.influences,
+  };
+}
+
+/**
  * Return cached network page data from KV, advancing the build if stale or
  * missing. Bundles all 4 data sources (artists, tags, similar, influences)
  * in a single KV entry per period.
@@ -200,7 +235,7 @@ export async function getCachedNetworkData(
   const isStale = !metadata || Date.now() - metadata.fetchedAt > TTL_SECONDS * 1000;
 
   if (value !== null && !isStale) {
-    return { data: value, fetchedAt: metadata!.fetchedAt, isStale: false };
+    return { data: withEnrichedArtistsOnly(value), fetchedAt: metadata!.fetchedAt, isStale: false };
   }
 
   // Cache miss or stale -- advance the resumable build by one bounded chunk.
@@ -209,7 +244,11 @@ export async function getCachedNetworkData(
   } catch (err) {
     // NCACHE-03: fall back to expired KV data if available
     if (value !== null) {
-      return { data: value, fetchedAt: metadata?.fetchedAt ?? Date.now(), isStale: true };
+      return {
+        data: withEnrichedArtistsOnly(value),
+        fetchedAt: metadata?.fetchedAt ?? Date.now(),
+        isStale: true,
+      };
     }
     throw err;
   }
@@ -217,13 +256,21 @@ export async function getCachedNetworkData(
   const { value: freshValue, metadata: freshMetadata } = await readData();
   if (freshValue !== null) {
     const stillStale = !freshMetadata || Date.now() - freshMetadata.fetchedAt > TTL_SECONDS * 1000;
-    return { data: freshValue, fetchedAt: freshMetadata!.fetchedAt, isStale: stillStale };
+    return {
+      data: withEnrichedArtistsOnly(freshValue),
+      fetchedAt: freshMetadata!.fetchedAt,
+      isStale: stillStale,
+    };
   }
 
   // The chunk above didn't finish the build. Prefer the previous stale
   // value so a page load never has to wait out a multi-chunk rebuild.
   if (value !== null) {
-    return { data: value, fetchedAt: metadata?.fetchedAt ?? Date.now(), isStale: true };
+    return {
+      data: withEnrichedArtistsOnly(value),
+      fetchedAt: metadata?.fetchedAt ?? Date.now(),
+      isStale: true,
+    };
   }
 
   // Never finalized even once -- serve the in-progress partial build rather
@@ -231,12 +278,12 @@ export async function getCachedNetworkData(
   const progress = (await kv.get(`network:warm:${period}`, { type: 'json' })) as NetworkWarmProgress | null;
   if (progress) {
     return {
-      data: {
+      data: withEnrichedArtistsOnly({
         artists: progress.artists,
         allTags: progress.allTags,
         allSimilar: progress.allSimilar,
         influences: [],
-      },
+      }),
       fetchedAt: progress.startedAt,
       isStale: true,
     };
