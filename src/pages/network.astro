@@ -554,6 +554,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
 
 <script>
   import * as d3 from 'd3';
+  import { assignGenres } from '../lib/network-genre';
 
   function initNetwork() {
     const scriptTag = document.getElementById('graph-data');
@@ -670,19 +671,18 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     }
 
     // --- Genre assignment ---
-    // Use graphData.links (source/target still strings) for genre lookup
-    const nodeGenre = new Map<string, string>();
-    const nodeGenre2 = new Map<string, string>();
-    nodes.forEach((n) => nodeGenre.set(n.id, 'other'));
-    graphData.links.forEach((l) => {
-      const tag = l.sharedTags[0];
-      if (tag) {
-        if (nodeGenre.get(l.source) === 'other') nodeGenre.set(l.source, tag);
-        else if (!nodeGenre2.has(l.source) && nodeGenre.get(l.source) !== tag) nodeGenre2.set(l.source, tag);
-        if (nodeGenre.get(l.target) === 'other') nodeGenre.set(l.target, tag);
-        else if (!nodeGenre2.has(l.target) && nodeGenre.get(l.target) !== tag) nodeGenre2.set(l.target, tag);
-      }
-    });
+    // A node's own tag list (nodeTagsRaw[n.id], from Last.fm's
+    // artist.getTopTags and already ranked by relevance) is the ground
+    // truth for "this artist's genre" -- not whatever it happens to share
+    // with a directly-connected neighbor. The previous version derived
+    // genre purely from edge-level sharedTags, so a well-tagged artist
+    // still landed in 'other' whenever none of its graph edges happened to
+    // carry a shared tag first (e.g. it was only connected via
+    // similarity/influence edges, or lost the tag to a neighbor) -- STC-340.
+    const { primary: nodeGenre, secondary: nodeGenre2 } = assignGenres(
+      nodes.map((n) => n.id),
+      nodeTagsRaw
+    );
 
     // --- Genre nodes and links ---
     const genres = Array.from(new Set(nodeGenre.values()));
