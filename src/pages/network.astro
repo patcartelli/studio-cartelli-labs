@@ -61,6 +61,7 @@ let isStale = false;
 let fetchedAt = 0; // assigned in successful fetch path only
 let uniqueTags: string[] = [];
 let nodeTagsMap: Record<string, string[]> = {};
+let nodeChronologyMap: Record<string, number> = {};
 
 function formatRelativeAge(ts: number): string {
   const ageMs = Date.now() - ts;
@@ -93,7 +94,7 @@ if (!kv) {
     isStale = result.isStale;
     fetchedAt = result.fetchedAt;
 
-    const { artists, allTags, allSimilar, influences: influenceLinks } = result.data;
+    const { artists, allTags, allSimilar, influences: influenceLinks, chronology } = result.data;
     const artistNames = artists.map((a) => a.name);
     const artistSet = new Set(artistNames.map((n) => n.toLowerCase()));
 
@@ -208,6 +209,14 @@ if (!kv) {
     uniqueTags = [...new Set(allTags.flat())].sort((a, b) => a.localeCompare(b));
     artists.forEach((artist, i) => {
       nodeTagsMap[artist.id] = allTags[i] ?? [];
+    });
+
+    // STC-334: chronology (Wikidata P571 inception year), keyed by canonical
+    // artist name like the influence links above -- case-insensitive match,
+    // since Wikidata labels don't always match Last.fm names exactly.
+    chronology.forEach(({ name, year }) => {
+      const canonical = lowerToCanonical.get(name.toLowerCase());
+      if (canonical) nodeChronologyMap[canonical] = year;
     });
   } catch (err) {
     console.error('[lab/network] data fetch failed:', err);
@@ -329,6 +338,11 @@ const staleAgeText = formatRelativeAge(fetchedAt);
   {!hasError && (
     <script id="node-tags-data" type="application/json"
       set:html={JSON.stringify(nodeTagsMap).replace(/<\//g, '<\\/')} />
+  )}
+
+  {!hasError && (
+    <script id="node-chronology-data" type="application/json"
+      set:html={JSON.stringify(nodeChronologyMap).replace(/<\//g, '<\\/')} />
   )}
 
   {networkChangelog.length > 0 && (
@@ -745,6 +759,16 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     const nodeTagsScript = document.getElementById('node-tags-data');
     const nodeTagsRaw: Record<string, string[]> = nodeTagsScript
       ? (JSON.parse(nodeTagsScript.textContent ?? '{}') as Record<string, string[]>)
+      : {};
+
+    // STC-334: formation year per artist (Wikidata P571), keyed by node id.
+    // Sparse by design -- P571 is an org/group property, so solo artists
+    // won't have an entry. Lets a viewer read "who came first" for any pair
+    // just by hovering each node, independent of an explicit P737 influence
+    // claim existing between them.
+    const nodeChronologyScript = document.getElementById('node-chronology-data');
+    const nodeChronology: Record<string, number> = nodeChronologyScript
+      ? (JSON.parse(nodeChronologyScript.textContent ?? '{}') as Record<string, number>)
       : {};
 
     const container = document.getElementById('network-container');
@@ -1364,7 +1388,10 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       .on('mouseenter', (event: MouseEvent, d: NodeDatum) => {
         // Cancel any pending edge tooltip when entering a node
         if (edgeTooltipTimer) { clearTimeout(edgeTooltipTimer); edgeTooltipTimer = null; }
-        tooltip.style('transition', 'opacity 0.15s').html(`<strong>${escapeHtml(d.name)}</strong>`).style('opacity', '1');
+        let html = `<strong>${escapeHtml(d.name)}</strong>`;
+        const formed = nodeChronology[d.id];
+        if (formed) html += `<div>formed ${formed}</div>`;
+        tooltip.style('transition', 'opacity 0.15s').html(html).style('opacity', '1');
         const rect = container.getBoundingClientRect();
         tooltip
           .style('left', `${event.clientX - rect.left + 14}px`)
@@ -1398,18 +1425,27 @@ const staleAgeText = formatRelativeAge(fetchedAt);
           const tgt = (d.target as { name?: string }).name ?? '';
           let html = '';
 
-          // Direction line for influence edges (D-04, D-06)
+          // Direction line for influence edges (D-04, D-06), combined with its
+          // leading shared tag on one line (STC-334) -- "A → B, via <tag>" is
+          // the one payload that teaches a viewer something a glance at the
+          // graph can't already tell them.
           // See the authoritative encoding comment above influenceLinks.forEach.
+          const primaryTag = (ld.sharedTags ?? [])[0];
+          const via = primaryTag ? `, via ${escapeHtml(primaryTag)}` : '';
           if (ld.influenceDirection === 'forward') {
-            html += `<div>${escapeHtml(tgt)} → ${escapeHtml(src)}</div>`;
+            html += `<div>${escapeHtml(tgt)} → ${escapeHtml(src)}${via}</div>`;
           } else if (ld.influenceDirection === 'reverse') {
-            html += `<div>${escapeHtml(src)} → ${escapeHtml(tgt)}</div>`;
+            html += `<div>${escapeHtml(src)} → ${escapeHtml(tgt)}${via}</div>`;
           }
           // No direction line for similarity-only edges (D-05)
 
-          // Shared tags line (omit if empty)
-          const tags = (ld.sharedTags ?? []).map((t: string) => escapeHtml(t)).join(', ');
-          if (tags) html += `<div>${tags}</div>`;
+          // Shared tags line (omit if empty) -- influence edges already fold
+          // their leading tag into the direction line above, so only list
+          // tags here for non-influence edges.
+          if (!ld.influenceDirection) {
+            const tags = (ld.sharedTags ?? []).map((t: string) => escapeHtml(t)).join(', ');
+            if (tags) html += `<div>${tags}</div>`;
+          }
 
           // Similarity score (always shown)
           html += `<div>similarity: ${(ld.similarity ?? 0).toFixed(2)}</div>`;
