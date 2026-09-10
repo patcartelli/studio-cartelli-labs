@@ -7,6 +7,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import type { Artist } from '../lib/lastfm';
 import { getCachedNetworkData } from '../lib/network-cache';
 import { changelog } from '../data/changelog';
+import { GENRE_FAMILIES, genreFamilySlug, type GenreFamily } from '../lib/genre-families';
+
+// Legend entries: the three coloured families, then the uncoloured bucket.
+const legendFamilies: GenreFamily[] = [...GENRE_FAMILIES, 'other'];
 
 const networkChangelog = changelog.filter((e) => e.project === 'network');
 
@@ -271,6 +275,21 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       </label>
     </nav>
 
+    {!hasError && (
+      <ul class="network__legend" aria-label="Genre colour key">
+        {legendFamilies.map((family) => (
+          <li class="network__legend-item">
+            <span
+              class={`network__legend-swatch network__legend-swatch--${genreFamilySlug(family)}`}
+              aria-hidden="true"
+            />
+            <span class="network__legend-label">{family}</span>
+            <span class="network__legend-count" data-genre-family={genreFamilySlug(family)} />
+          </li>
+        ))}
+      </ul>
+    )}
+
     {hasError ? (
       <p class="network__error">Network unavailable — check back soon.</p>
     ) : (
@@ -330,6 +349,69 @@ const staleAgeText = formatRelativeAge(fetchedAt);
   .network {
     padding-top: var(--space-2xl);
     padding-bottom: var(--space-xl);
+
+    /* STC-339 genre palette. Declared here rather than in global.css because
+       nothing else on the site colours by genre, and set on .network (not the
+       canvas) so the legend swatches and the D3-built SVG nodes inherit the
+       same values.
+
+       Three hues, not more: a force layout can put any two nodes next to each
+       other, which is the strict "all-pairs" case for a categorical palette.
+       Validated with the data-viz palette checker against this page's own
+       surfaces -- all checks pass at three in both themes (worst normal-vision
+       dE 24.0 light / 20.9 dark, worst CVD dE 9.2 / 9.4). Eight hues fail the
+       normal-vision floor outright and four fail in dark mode, so the long tail
+       stays monochrome instead. See src/lib/genre-families.ts.
+
+       The dark values are the same hues re-stepped for the dark surface, not an
+       automatic flip. Light-mode aqua sits at 2.65:1, below the 3:1 non-text
+       floor, which the checker allows only with visible labels as relief --
+       every node carries its artist name and the legend is always in frame. */
+    --genre-electronic: #2a78d6;
+    --genre-guitar: #eb6834;
+    --genre-hip-hop-soul: #1baf7a;
+    --genre-other: var(--color-on-surface);
+  }
+  :root[data-theme="dark"] .network {
+    --genre-electronic: #3987e5;
+    --genre-guitar: #d95926;
+    --genre-hip-hop-soul: #199e70;
+  }
+
+  .network__legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs) var(--space-md);
+    list-style: none;
+    margin: 0 0 var(--space-md);
+    padding: 0;
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+  .network__legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+  }
+  .network__legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    /* Identity is never colour-alone: the swatch sits beside a text label. */
+    background-color: var(--genre-other);
+    opacity: 0.85;
+  }
+  .network__legend-swatch--electronic { background-color: var(--genre-electronic); }
+  .network__legend-swatch--guitar { background-color: var(--genre-guitar); }
+  .network__legend-swatch--hip-hop-soul { background-color: var(--genre-hip-hop-soul); }
+  .network__legend-count {
+    color: var(--color-on-surface-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .network__legend-count:empty {
+    display: none;
   }
   .network__heading {
     font-family: var(--font-display);
@@ -554,6 +636,12 @@ const staleAgeText = formatRelativeAge(fetchedAt);
 
 <script>
   import * as d3 from 'd3';
+  import {
+    genreFamilyForTags,
+    genreFamilySlug,
+    GENRE_FAMILIES,
+    type GenreFamily,
+  } from '../lib/genre-families';
 
   function initNetwork() {
     const scriptTag = document.getElementById('graph-data');
@@ -669,22 +757,63 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       btnFullscreen.hidden = true;
     }
 
-    // --- Genre assignment ---
-    // Use graphData.links (source/target still strings) for genre lookup
+    // --- Genre assignment (STC-339) ---
+    // A node's genre is its own highest-ranked Last.fm tag. This used to be
+    // sharedTags[0] off whichever link happened to be iterated first, which
+    // made it depend on link iteration order and left any node without a
+    // shared-tag link stranded in 'other'. That was survivable while genre only
+    // nudged the layout; colour turns it into a visible claim about the artist,
+    // so it now comes from the artist's own tags.
     const nodeGenre = new Map<string, string>();
     const nodeGenre2 = new Map<string, string>();
-    nodes.forEach((n) => nodeGenre.set(n.id, 'other'));
-    graphData.links.forEach((l) => {
-      const tag = l.sharedTags[0];
-      if (tag) {
-        if (nodeGenre.get(l.source) === 'other') nodeGenre.set(l.source, tag);
-        else if (!nodeGenre2.has(l.source) && nodeGenre.get(l.source) !== tag) nodeGenre2.set(l.source, tag);
-        if (nodeGenre.get(l.target) === 'other') nodeGenre.set(l.target, tag);
-        else if (!nodeGenre2.has(l.target) && nodeGenre.get(l.target) !== tag) nodeGenre2.set(l.target, tag);
-      }
+    nodes.forEach((n) => {
+      const tags = nodeTagsRaw[n.id] ?? [];
+      nodeGenre.set(n.id, tags[0] ?? 'other');
+      if (tags[1]) nodeGenre2.set(n.id, tags[1]);
+    });
+
+    // Colour family per node. Three families plus an uncoloured 'other' --
+    // see src/lib/genre-families.ts for why the palette stops at three.
+    const nodeFamily = new Map<string, GenreFamily>();
+    nodes.forEach((n) => nodeFamily.set(n.id, genreFamilyForTags(nodeTagsRaw[n.id] ?? [])));
+
+    const familyFill = (id: string) =>
+      `var(--genre-${genreFamilySlug(nodeFamily.get(id) ?? 'other')})`;
+
+    // Fill in the legend's per-family node counts. The labels and swatches are
+    // server-rendered, so the legend is already readable if this never runs.
+    const familyCounts = new Map<string, number>();
+    nodeFamily.forEach((family) => {
+      const slug = genreFamilySlug(family);
+      familyCounts.set(slug, (familyCounts.get(slug) ?? 0) + 1);
+    });
+    document.querySelectorAll<HTMLElement>('.network__legend-count').forEach((el) => {
+      const slug = el.dataset.genreFamily;
+      if (slug) el.textContent = String(familyCounts.get(slug) ?? 0);
     });
 
     // --- Genre nodes and links ---
+    // Cap the number of poles. Own-top-tag genres are far more granular than
+    // the shared-tag ones this replaced, so an uncapped list would ring the
+    // canvas with dozens of single-member poles; the long tail clusters under
+    // 'other' instead.
+    const MAX_GENRE_POLES = 12;
+    const genreCounts = new Map<string, number>();
+    nodeGenre.forEach((genre) => genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1));
+    const topGenres = new Set(
+      Array.from(genreCounts.entries())
+        .filter(([genre]) => genre !== 'other')
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, MAX_GENRE_POLES)
+        .map(([genre]) => genre)
+    );
+    nodeGenre.forEach((genre, id) => {
+      if (!topGenres.has(genre)) nodeGenre.set(id, 'other');
+    });
+    nodeGenre2.forEach((genre, id) => {
+      if (!topGenres.has(genre)) nodeGenre2.delete(id);
+    });
+
     const genres = Array.from(new Set(nodeGenre.values()));
     const poleRadius = Math.min(width, height) * 0.35;
     const cx = width / 2;
@@ -834,8 +963,8 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       .data(nodes as NodeDatum[])
       .join('circle')
       .attr('r', (d) => radiusScale(d.playcount))
-      .attr('fill', 'var(--color-on-surface)')
-      .attr('fill-opacity', 0.75)
+      .attr('fill', (d) => familyFill(d.id))
+      .attr('fill-opacity', 0.85)
       .attr('pointer-events', 'none');
 
     // Labels
