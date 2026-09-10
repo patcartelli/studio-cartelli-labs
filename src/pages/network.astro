@@ -703,6 +703,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
 
 <script>
   import * as d3 from 'd3';
+  import { assignGenres } from '../lib/network-genre';
   import {
     genreFamilyForTags,
     genreFamilySlug,
@@ -825,23 +826,24 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       btnFullscreen.hidden = true;
     }
 
-    // --- Genre assignment (STC-339) ---
-    // A node's genre is its own highest-ranked Last.fm tag. This used to be
-    // sharedTags[0] off whichever link happened to be iterated first, which
-    // made it depend on link iteration order and left any node without a
-    // shared-tag link stranded in 'other'. That was survivable while genre only
-    // nudged the layout; colour turns it into a visible claim about the artist,
-    // so it now comes from the artist's own tags.
-    const nodeGenre = new Map<string, string>();
-    const nodeGenre2 = new Map<string, string>();
-    nodes.forEach((n) => {
-      const tags = nodeTagsRaw[n.id] ?? [];
-      nodeGenre.set(n.id, tags[0] ?? 'other');
-      if (tags[1]) nodeGenre2.set(n.id, tags[1]);
-    });
+    // --- Genre assignment ---
+    // A node's own tag list (nodeTagsRaw[n.id], from Last.fm's
+    // artist.getTopTags and already ranked by relevance) is the ground
+    // truth for "this artist's genre" -- not whatever it happens to share
+    // with a directly-connected neighbor. The previous version derived
+    // genre purely from edge-level sharedTags, so a well-tagged artist
+    // still landed in 'other' whenever none of its graph edges happened to
+    // carry a shared tag first (e.g. it was only connected via
+    // similarity/influence edges, or lost the tag to a neighbor) -- STC-340.
+    const { primary: nodeGenre, secondary: nodeGenre2 } = assignGenres(
+      nodes.map((n) => n.id),
+      nodeTagsRaw
+    );
 
-    // Colour family per node. Three families plus an uncoloured 'other' --
-    // see src/lib/genre-families.ts for why the palette stops at three.
+    // Colour family per node (STC-339). nodeGenre above is the artist's own
+    // top tag, which is what the genre poles cluster on; the family is the
+    // broader bucket that tag rolls up into, and is what carries colour.
+    // Eight families plus an uncoloured 'other' -- see src/lib/genre-families.ts.
     const nodeFamily = new Map<string, GenreFamily>();
     nodes.forEach((n) => nodeFamily.set(n.id, genreFamilyForTags(nodeTagsRaw[n.id] ?? [])));
 
@@ -882,10 +884,10 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     });
 
     // --- Genre nodes and links ---
-    // Cap the number of poles. Own-top-tag genres are far more granular than
-    // the shared-tag ones this replaced, so an uncapped list would ring the
-    // canvas with dozens of single-member poles; the long tail clusters under
-    // 'other' instead.
+    // Cap the number of poles. The own-top-tag genres assignGenres returns are
+    // far more granular than the edge-derived ones they replaced, so an
+    // uncapped list rings the canvas with dozens of single-member poles; the
+    // long tail clusters under 'other' instead.
     const MAX_GENRE_POLES = 12;
     const genreCounts = new Map<string, number>();
     nodeGenre.forEach((genre) => genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1));
