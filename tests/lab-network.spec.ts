@@ -57,12 +57,13 @@ test('network controls bar has genre and fullscreen buttons', async ({ page }) =
 test('genre mode shows at least one non-other pole', async ({ page }) => {
   await page.goto('/lab/network');
 
-  // Skip if the page is in error state (no data)
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to classify' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
 
   // Enable genre mode
   await page.locator('#ctrl-genre').click();
@@ -88,11 +89,13 @@ test('genre mode shows at least one non-other pole', async ({ page }) => {
 
 test('network page has search, genre filter, and threshold controls', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to test controls' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   await expect(page.locator('#ctrl-search')).toBeVisible();
   await expect(page.locator('#ctrl-genre-filter')).toBeVisible();
   await expect(page.locator('#ctrl-threshold')).toBeVisible();
@@ -104,11 +107,13 @@ test('network page has search, genre filter, and threshold controls', async ({ p
 
 test('search input ghosts non-matching nodes (SEARCH-01)', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to filter' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   // Wait for graph to render (select only data nodes, not genre pole circles)
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   // Get total data node count (genre pole circles have no fill-opacity attribute)
@@ -134,11 +139,13 @@ test('search input ghosts non-matching nodes (SEARCH-01)', async ({ page }) => {
 
 test('genre dropdown ghosts nodes without selected tag (SEARCH-02)', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to filter' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   const totalNodes = await page.locator('svg circle[fill-opacity]').count();
   // Select the second option (first real tag after "all tags")
@@ -158,11 +165,13 @@ test('genre dropdown ghosts nodes without selected tag (SEARCH-02)', async ({ pa
 
 test('threshold slider ghosts low-similarity edges and disconnected nodes (SEARCH-03)', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to filter' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   // Move threshold to 0.5 (should ghost some edges and nodes)
   await page.locator('#ctrl-threshold').fill('0.5');
@@ -182,11 +191,13 @@ test('threshold slider ghosts low-similarity edges and disconnected nodes (SEARC
 
 test('search and genre filter work together as intersection (SEARCH-04)', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to filter' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   const totalNodes = await page.locator('svg circle[fill-opacity]').count();
   // Apply genre filter first
@@ -208,23 +219,19 @@ test('search and genre filter work together as intersection (SEARCH-04)', async 
 test('pressing a node without dragging does not displace other nodes', async ({ page }) => {
   await page.goto('/lab/network');
 
-  // Skip if the page is in error state (no Last.fm credentials / rate limit)
-  const error = page.locator('.network__error');
-  const errorVisible = await error.isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Page in error state (likely no Last.fm credentials)' });
-    return;
-  }
+  // STC-344: annotate-and-return reports as a PASS, not a skip. Fixture mode
+  // now feeds this page real data in CI, so an error state is a real failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
 
   // Wait for the SVG and circles to be rendered
   const circles = page.locator('.network__canvas svg circle');
   await expect(circles.first()).toBeVisible();
   const count = await circles.count();
-  // Need at least 2 nodes for this test to be meaningful
-  if (count < 2) {
-    test.info().annotations.push({ type: 'skip', description: 'Not enough nodes rendered (likely error state)' });
-    return;
-  }
+  // STC-344: the fixture guarantees 13 nodes, so too few is a real failure.
+  expect(count, 'need >= 2 nodes for this test to mean anything').toBeGreaterThanOrEqual(2);
 
   // Let the simulation settle: poll until the observed node's position is
   // stable across consecutive samples instead of hoping a fixed delay is enough.
@@ -281,12 +288,12 @@ test('network changelog shows entries when opened', async ({ page }) => {
 test('network meta line shows freshness text (NCACHE-02)', async ({ page }) => {
   await page.goto('/lab/network');
 
-  const error = page.locator('.network__error');
-  const errorVisible = await error.isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Page in error state' });
-    return;
-  }
+  // STC-344: annotate-and-return reports as a PASS, not a skip. Fixture mode
+  // now feeds this page real data in CI, so an error state is a real failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
 
   const meta = page.locator('.network__meta');
   await expect(meta).toBeVisible();
@@ -297,12 +304,12 @@ test('network meta line shows freshness text (NCACHE-02)', async ({ page }) => {
 test('network meta line contains node count, link count, and freshness (NCACHE-02)', async ({ page }) => {
   await page.goto('/lab/network');
 
-  const error = page.locator('.network__error');
-  const errorVisible = await error.isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Page in error state' });
-    return;
-  }
+  // STC-344: annotate-and-return reports as a PASS, not a skip. Fixture mode
+  // now feeds this page real data in CI, so an error state is a real failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
 
   const meta = page.locator('.network__meta');
   const text = await meta.textContent();
@@ -314,12 +321,12 @@ test('network meta line contains node count, link count, and freshness (NCACHE-0
 test('network page renders graph with nodes from cached data (NCACHE-01)', async ({ page }) => {
   await page.goto('/lab/network');
 
-  const error = page.locator('.network__error');
-  const errorVisible = await error.isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Page in error state' });
-    return;
-  }
+  // STC-344: annotate-and-return reports as a PASS, not a skip. Fixture mode
+  // now feeds this page real data in CI, so an error state is a real failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
 
   const svg = page.locator('.network__canvas svg');
   await expect(svg).toBeVisible();
@@ -330,12 +337,12 @@ test('network page renders graph with nodes from cached data (NCACHE-01)', async
 test('stale-data banner is not visible when data is fresh (NCACHE-03)', async ({ page }) => {
   await page.goto('/lab/network');
 
-  const error = page.locator('.network__error');
-  const errorVisible = await error.isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Page in error state' });
-    return;
-  }
+  // STC-344: annotate-and-return reports as a PASS, not a skip. Fixture mode
+  // now feeds this page real data in CI, so an error state is a real failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
 
   const banner = page.locator('.network__stale-banner');
   await expect(banner).toHaveCount(0);
@@ -343,11 +350,13 @@ test('stale-data banner is not visible when data is fresh (NCACHE-03)', async ({
 
 test('edge hover shows tooltip with similarity score (VIS-02)', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to test' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
 
   // Find a hit-area line (transparent stroke for hover targets)
@@ -370,11 +379,13 @@ test('controls wrap at 375px without horizontal overflow (MOB-01)', async ({ pag
   // This test is only meaningful at mobile viewport (375px) where flex-wrap kicks in
   test.skip(testInfo.project.name !== 'Mobile', 'MOB-01 targets 375px viewport only');
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to test' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
 
   // Check .network__periods has no horizontal overflow
   const periodsOverflow = await page.locator('.network__periods').evaluate((el) => el.scrollWidth > el.clientWidth);
@@ -394,11 +405,13 @@ test('controls wrap at 375px without horizontal overflow (MOB-01)', async ({ pag
 
 test('double-tap does not zoom the graph (MOB-02)', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to test' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
 
   // Get the zoom group's transform before double-tap
@@ -422,11 +435,13 @@ test('fullscreen button hidden when API unsupported (MOB-03)', async ({ page }) 
     Object.defineProperty(document, 'fullscreenEnabled', { value: undefined, writable: true, configurable: true });
   });
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to test' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
 
   // The fullscreen button should be hidden
   const btn = page.locator('#ctrl-fullscreen');
@@ -435,11 +450,13 @@ test('fullscreen button hidden when API unsupported (MOB-03)', async ({ page }) 
 
 test('all nodes have 44px minimum touch target (MOB-04)', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to test' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
 
   // Get all hit-area circle radii
@@ -455,20 +472,23 @@ test('all nodes have 44px minimum touch target (MOB-04)', async ({ page }) => {
 
 test('influence edges have arrowhead markers (VIS-01)', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to test' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
 
   // At least one influence edge line should have marker-end set
   const markedLines = page.locator('svg line[marker-end]');
   const count = await markedLines.count();
-  if (count === 0) {
-    test.info().annotations.push({ type: 'skip', description: 'No influence edges in dataset — VIS-01 not verifiable (Wikidata P737 requires exact name match)' });
-    return;
-  }
+  // STC-344: a real test.skip(), not an annotate-and-return that reports as a
+  // PASS. Influence edges come from Wikidata (P737), which has no fixture and
+  // is unreachable from CI, so this stays genuinely unverifiable there — but it
+  // now reports as skipped rather than quietly counting as coverage.
+  test.skip(count === 0, 'No influence edges in dataset — VIS-01 not verifiable (Wikidata P737 requires exact name match)');
 
   // Verify the marker attribute value references the arrowhead definition
   const firstMarkerEnd = await markedLines.first().getAttribute('marker-end');
@@ -477,20 +497,23 @@ test('influence edges have arrowhead markers (VIS-01)', async ({ page }) => {
 
 test('influence edge endpoints are retracted to node perimeter (VIS-03)', async ({ page }) => {
   await page.goto('/lab/network');
-  const errorVisible = await page.locator('.network__error').isVisible().catch(() => false);
-  if (errorVisible) {
-    test.info().annotations.push({ type: 'skip', description: 'Error state — no data to test' });
-    return;
-  }
+  // STC-344: this used to annotate-and-return on the error state, which
+  // Playwright counts as a PASS, not a skip. Fixture mode now feeds this page
+  // real data in CI, so an error state here is a genuine failure.
+  await expect(
+    page.locator('.network__error'),
+    '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
+  ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
 
   // Get the first influence edge line
   const markedLines = page.locator('svg line[marker-end]');
   const count = await markedLines.count();
-  if (count === 0) {
-    test.info().annotations.push({ type: 'skip', description: 'No influence edges in dataset — VIS-03 not verifiable' });
-    return;
-  }
+  // STC-344: a real test.skip(), not an annotate-and-return that reports as a
+  // PASS. Influence edges come from Wikidata (P737), which has no fixture and
+  // is unreachable from CI, so this stays genuinely unverifiable there — but it
+  // now reports as skipped rather than quietly counting as coverage.
+  test.skip(count === 0, 'No influence edges in dataset — VIS-03 not verifiable');
 
   // Read x2/y2 of the influence edge
   const lineX2 = parseFloat(await markedLines.first().getAttribute('x2') ?? '0');
