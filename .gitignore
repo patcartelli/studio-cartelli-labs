@@ -33,11 +33,28 @@ playwright-report/
 # wrangler / miniflare local state
 .wrangler/
 
-# Licensed fonts: the main studiocartelli.com site self-hosts a paid,
-# non-redistributable commercial font family. Never commit font binaries
-# to this public repo — see src/styles/global.css for the fallback stack
-# this repo uses instead (labs-split Phase 1, D-03).
-public/fonts/*.woff
-public/fonts/*.woff2
-public/fonts/*.otf
-public/fonts/*.ttf
+# Licensed fonts — repo-wide, all formats, every directory.
+#
+# studiocartelli.com self-hosts Polymath under a paid OH no Type web
+# license (500k monthly page views) that prohibits redistribution. This
+# repo is PUBLIC, so a committed font binary would be a license breach.
+#
+# The /lab site still renders in Polymath: src/styles/global.css
+# references the files by URL and the main studiocartelli.com Worker
+# serves them. Nothing here needs a local binary to build or deploy.
+#
+# Deliberately unanchored (**/) rather than scoped to public/fonts/ —
+# the previous scoped form would not have caught a font dropped in
+# src/, in the repo root, or in a directory nobody has created yet.
+#
+# To work locally with real Polymath, drop your licensed copies into
+# public/fonts/ — they are ignored here and served at /lab/fonts/* by
+# the dev server, which is the second src in each @font-face rule.
+#
+# If you ever need to commit an openly-licensed font (SIL OFL and
+# similar), `git add -f` it and note the license in that commit.
+**/*.woff
+**/*.woff2
+**/*.otf
+**/*.ttf
+**/*.eot
