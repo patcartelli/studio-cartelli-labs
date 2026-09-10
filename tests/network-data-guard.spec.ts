@@ -13,12 +13,19 @@ import { test, expect } from '@playwright/test';
 // header describes for /lab/chart, just never given the same fix or the
 // same tripwire here (STC-344).
 //
+// Those 21 `if (errorVisible) { skip; return; }` blocks are now gone --
+// 19 became hard assertions and the 2 covering Wikidata influence edges
+// became real test.skip() calls. Worth being precise about why they were so
+// dangerous: a bare `return` is NOT a skip. Playwright counts it as a PASS,
+// so the suite reported 21 green tests that asserted nothing at all.
+//
 // Deliberately unconditional: no test.skip, no CI branch, no data guard.
 // If it is ever "fixed" by adding a skip to it, the hole it exists to
 // detect reopens silently. (STC-344)
 // ============================================================
 
 const MIN_EXPECTED_NODES = 5;
+const MIN_EXPECTED_FAMILIES = 2;
 
 test('GUARD: /lab/network renders real data — never skips, so a coverage hole cannot hide', async ({ page }) => {
   const consoleErrors: string[] = [];
@@ -55,4 +62,59 @@ test('GUARD: /lab/network renders real data — never skips, so a coverage hole 
     genreOptionCount,
     'genre filter has no real tag options beyond the default -- artist.getTopTags fixture data is missing'
   ).toBeGreaterThan(1);
+
+  // --- Each known failure mode gets its own assertion, so a regression names
+  // --- itself instead of surfacing as a vague "not enough data".
+
+  // STC-340: nodes render but their tag arrays are empty. The graph looks
+  // fine while every genre-dependent behaviour on the page is inert.
+  const nodeTags = await page.evaluate(() => {
+    const el = document.getElementById('node-tags-data');
+    return el ? (JSON.parse(el.textContent ?? '{}') as Record<string, string[]>) : {};
+  });
+  const tagged = Object.values(nodeTags).filter((t) => t.length > 0).length;
+  expect(
+    tagged,
+    `${Object.keys(nodeTags).length} artists rendered but only ${tagged} have any tags -- ` +
+      `STC-340's signature: partial enrichment presented as complete.`
+  ).toBe(Object.keys(nodeTags).length);
+
+  // STC-332: every link comes back with similarity 0 because the
+  // similar-artist fetch failed and was swallowed.
+  const nonZeroSimilarity = await page.evaluate(() => {
+    const el = document.getElementById('graph-data');
+    if (!el) return 0;
+    const g = JSON.parse(el.textContent ?? '{}') as { links?: { similarity?: number }[] };
+    return (g.links ?? []).filter((l) => (l.similarity ?? 0) > 0).length;
+  });
+  expect(
+    nonZeroSimilarity,
+    `every link has similarity 0 -- STC-332's signature: artist.getSimilar is failing silently.`
+  ).toBeGreaterThan(0);
+
+  // STC-339: colour only means something if more than one family is present.
+  // The legend markup is server-rendered but its counts are filled in by the
+  // client script, so a populated count also proves that script ran.
+  await expect(
+    page.locator('.network__legend'),
+    'genre legend missing -- STC-339 colour key did not render'
+  ).toBeVisible();
+
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(
+          () =>
+            Array.from(document.querySelectorAll<HTMLElement>('.network__legend-count')).filter(
+              (el) => el.dataset.genreFamily !== 'other' && Number(el.textContent ?? '0') > 0
+            ).length
+        ),
+      {
+        message:
+          'fewer than 2 coloured genre families have nodes -- the palette is not being ' +
+          'exercised, so colour-dependent behaviour is untested',
+        timeout: 10_000,
+      }
+    )
+    .toBeGreaterThanOrEqual(MIN_EXPECTED_FAMILIES);
 });
