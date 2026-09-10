@@ -110,7 +110,15 @@ test('STC-332: a single stale/cold read for a 100-artist period never approaches
     // as an explicitly partial/stale result, never as silently "fresh"
     // broken data (which is exactly what blocked warmNetworkCache before).
     expect(result.isStale).toBe(true);
-    expect(result.data.artists.length).toBe(ARTIST_COUNT);
+
+    // STC-340: this used to assert the full ARTIST_COUNT here, but the build
+    // has only enriched one chunk at this point -- serving all 100 artists
+    // next to 15 tag entries is what left the page rendering nodes with no
+    // genre tags. The partial read now yields the enriched prefix only; see
+    // tests/network-cache-partial-tags.spec.ts. Convergence on the full
+    // 100-artist graph is covered by the next test.
+    expect(result.data.artists.length).toBe(NETWORK_WARM_CHUNK_SIZE);
+    expect(result.data.allTags.length).toBe(result.data.artists.length);
   } finally {
     globalThis.fetch = originalFetch;
     await mf?.dispose();
