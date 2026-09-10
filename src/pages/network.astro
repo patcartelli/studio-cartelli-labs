@@ -278,13 +278,20 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     {!hasError && (
       <ul class="network__legend" aria-label="Genre colour key">
         {legendFamilies.map((family) => (
-          <li class="network__legend-item">
-            <span
-              class={`network__legend-swatch network__legend-swatch--${genreFamilySlug(family)}`}
-              aria-hidden="true"
-            />
-            <span class="network__legend-label">{family}</span>
-            <span class="network__legend-count" data-genre-family={genreFamilySlug(family)} />
+          <li>
+            <button
+              type="button"
+              class="network__legend-item"
+              data-genre-family={genreFamilySlug(family)}
+              aria-pressed="false"
+            >
+              <span
+                class={`network__legend-swatch network__legend-swatch--${genreFamilySlug(family)}`}
+                aria-hidden="true"
+              />
+              <span class="network__legend-label">{family}</span>
+              <span class="network__legend-count" data-genre-family={genreFamilySlug(family)} />
+            </button>
           </li>
         ))}
       </ul>
@@ -355,29 +362,62 @@ const staleAgeText = formatRelativeAge(fetchedAt);
        canvas) so the legend swatches and the D3-built SVG nodes inherit the
        same values.
 
-       Three hues, not more: a force layout can put any two nodes next to each
-       other, which is the strict "all-pairs" case for a categorical palette.
-       Validated with the data-viz palette checker against this page's own
-       surfaces -- all checks pass at three in both themes (worst normal-vision
-       dE 24.0 light / 20.9 dark, worst CVD dE 9.2 / 9.4). Eight hues fail the
-       normal-vision floor outright and four fail in dark mode, so the long tail
-       stays monochrome instead. See src/lib/genre-families.ts.
+       Eight hues, searched rather than borrowed. A force layout can put any two
+       nodes next to each other, which is the strict "all-pairs" case for a
+       categorical palette -- far harder than the "adjacent-pairs" case a stock
+       palette is tuned for. The data-viz reference palette's eight scored a
+       worst all-pairs normal-vision dE of 7.1 and CVD 3.2 against this page's
+       surfaces, both hard failures. These eight were found by searching OKLCH
+       for the set maximising worst-case all-pairs separation inside each mode's
+       lightness band, and score, against #f8f8f8 / #18181C:
 
-       The dark values are the same hues re-stepped for the dark surface, not an
-       automatic flip. Light-mode aqua sits at 2.65:1, below the 3:1 non-text
-       floor, which the checker allows only with visible labels as relief --
-       every node carries its artist name and the legend is always in frame. */
-    --genre-electronic: #2a78d6;
-    --genre-guitar: #eb6834;
-    --genre-hip-hop-soul: #1baf7a;
+         light  normal dE 14.4  |  CVD dE 7.6  |  lightness + chroma PASS
+         dark   normal dE 13.3  |  CVD dE 6.4  |  lightness + chroma + 3:1 PASS
+
+       Roughly double the separation of the stock eight, and CVD moves from a
+       hard failure into the 6-8 band, which is permitted with secondary
+       encoding. Both modes still land just under the 15.0 normal-vision floor:
+       eight hues cannot clear it in dark mode, whose lightness band (0.48-0.67)
+       is barely half of light's (0.43-0.77), so eight colours must separate by
+       hue alone there and the OKLCH hue circle is not big enough at achievable
+       chroma. Three hues clear every floor outright; eight is a deliberate
+       trade of strict separation for granularity.
+
+       What carries identity when two hues are close: every node is labelled
+       with its artist name, and the legend is interactive -- clicking a family
+       isolates it, so any "which family is this?" question is answerable
+       without discriminating hues by eye. That is also the relief the checker
+       requires for the light-mode contrast warning (three slots sit under 3:1
+       on the light surface).
+
+       Dark values are the same eight hue angles re-stepped for the dark
+       surface, not an automatic flip, so a family keeps its identity across
+       themes. Slot order is fixed and matches GENRE_FAMILIES: colour follows
+       the family, never its node count. See src/lib/genre-families.ts. */
+    --genre-electronic: #26ccd1;
+    --genre-rock: #a9525f;
+    --genre-metal: #737000;
+    --genre-punk: #504cef;
+    --genre-indie: #6e3673;
+    --genre-hip-hop: #d7861e;
+    --genre-soul-funk: #48a16e;
+    --genre-jazz-blues: #007baa;
     --genre-other: var(--color-on-surface);
   }
   :root[data-theme="dark"] .network {
-    --genre-electronic: #3987e5;
-    --genre-guitar: #d95926;
-    --genre-hip-hop-soul: #199e70;
+    --genre-electronic: #03999d;
+    --genre-rock: #c1405a;
+    --genre-metal: #969442;
+    --genre-punk: #4f52db;
+    --genre-indie: #c056ca;
+    --genre-hip-hop: #955903;
+    --genre-soul-funk: #227549;
+    --genre-jazz-blues: #006c96;
   }
 
+  .network__legend li {
+    display: contents;
+  }
   .network__legend {
     display: flex;
     flex-wrap: wrap;
@@ -393,6 +433,28 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     display: inline-flex;
     align-items: center;
     gap: var(--space-2xs);
+    /* Reset the UA button box -- this reads as a label, not a control, until
+       hovered or pressed. */
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    padding: 2px 6px;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  .network__legend-item:hover {
+    border-color: var(--color-border);
+    color: var(--color-on-surface);
+  }
+  .network__legend-item:focus-visible {
+    outline: 2px solid var(--color-on-surface);
+    outline-offset: 1px;
+  }
+  .network__legend-item[aria-pressed='true'] {
+    border-color: var(--color-on-surface);
+    color: var(--color-on-surface);
   }
   .network__legend-swatch {
     width: 10px;
@@ -401,11 +463,16 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     flex-shrink: 0;
     /* Identity is never colour-alone: the swatch sits beside a text label. */
     background-color: var(--genre-other);
-    opacity: 0.85;
+    opacity: 0.75; /* matches FULL_NODE_OPACITY on the nodes themselves */
   }
   .network__legend-swatch--electronic { background-color: var(--genre-electronic); }
-  .network__legend-swatch--guitar { background-color: var(--genre-guitar); }
-  .network__legend-swatch--hip-hop-soul { background-color: var(--genre-hip-hop-soul); }
+  .network__legend-swatch--rock { background-color: var(--genre-rock); }
+  .network__legend-swatch--metal { background-color: var(--genre-metal); }
+  .network__legend-swatch--punk { background-color: var(--genre-punk); }
+  .network__legend-swatch--indie { background-color: var(--genre-indie); }
+  .network__legend-swatch--hip-hop { background-color: var(--genre-hip-hop); }
+  .network__legend-swatch--soul-funk { background-color: var(--genre-soul-funk); }
+  .network__legend-swatch--jazz-blues { background-color: var(--genre-jazz-blues); }
   .network__legend-count {
     color: var(--color-on-surface-muted);
     font-variant-numeric: tabular-nums;
@@ -746,6 +813,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       fullscreen: false,
       searchTerm: '',
       selectedTag: '',
+      selectedFamily: '',
       similarityThreshold: 0,
     };
 
@@ -790,6 +858,27 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     document.querySelectorAll<HTMLElement>('.network__legend-count').forEach((el) => {
       const slug = el.dataset.genreFamily;
       if (slug) el.textContent = String(familyCounts.get(slug) ?? 0);
+    });
+
+    // --- Interactive legend (STC-339) ---
+    // Clicking a family isolates it; clicking the pressed one clears. One
+    // family at a time, so the key doubles as a way to answer "which nodes are
+    // these?" without relying on telling two hues apart by eye.
+    const legendButtons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.network__legend-item')
+    );
+    legendButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const slug = btn.dataset.genreFamily ?? '';
+        state.selectedFamily = state.selectedFamily === slug ? '' : slug;
+        legendButtons.forEach((b) => {
+          b.setAttribute(
+            'aria-pressed',
+            String(b.dataset.genreFamily === state.selectedFamily && state.selectedFamily !== '')
+          );
+        });
+        applyFilters();
+      });
     });
 
     // --- Genre nodes and links ---
@@ -964,7 +1053,8 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       .join('circle')
       .attr('r', (d) => radiusScale(d.playcount))
       .attr('fill', (d) => familyFill(d.id))
-      .attr('fill-opacity', 0.85)
+      // Matches FULL_NODE_OPACITY, which applyFilters resets to on first run.
+      .attr('fill-opacity', 0.75)
       .attr('pointer-events', 'none');
 
     // Labels
@@ -1039,7 +1129,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     const FULL_EDGE_OPACITY = 0.50;
 
     function applyFilters() {
-      const { searchTerm, selectedTag, similarityThreshold } = state;
+      const { searchTerm, selectedTag, selectedFamily, similarityThreshold } = state;
 
       // 1. Compute which links are below the similarity threshold
       const hiddenLinkIndices = new Set<number>();
@@ -1072,9 +1162,13 @@ const staleAgeText = formatRelativeAge(fetchedAt);
           || n.name.toLowerCase().includes(searchTerm.toLowerCase());
         const tagMatch = selectedTag === ''
           || (nodeTagSet.get(n.id) ?? new Set()).has(selectedTag);
+        // Legend filter (STC-339). Intersects with the others, same as search
+        // and the tag dropdown already do (SEARCH-04).
+        const familyMatch = selectedFamily === ''
+          || genreFamilySlug(nodeFamily.get(n.id) ?? 'other') === selectedFamily;
         const thresholdMatch = similarityThreshold === 0
           || connectedNodeIds.has(n.id);
-        if (!nameMatch || !tagMatch || !thresholdMatch) {
+        if (!nameMatch || !tagMatch || !familyMatch || !thresholdMatch) {
           ghostedNodes.add(n.id);
         }
       });

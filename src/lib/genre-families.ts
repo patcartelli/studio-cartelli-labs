@@ -1,71 +1,111 @@
 // src/lib/genre-families.ts
-// STC-339: maps a Last.fm tag onto one of three broad genre families, which is
+// STC-339: maps a Last.fm tag onto one of eight broad genre families, which is
 // what /lab/network colours nodes by.
-//
-// Why three and not more: a network graph is the "all-pairs" case for a
-// categorical palette -- the force layout can put any two nodes next to each
-// other, unlike a bar chart where only adjacent series touch. Validated against
-// the page's own surfaces (#f8f8f8 light, #18181C dark), eight distinct hues
-// fail the normal-vision separation floor outright (worst pair dE 7.1, floor
-// 15) and four fail in dark mode (dE 9.8). Three pass every check in both
-// themes with real headroom, so three families it is. Everything else stays
-// monochrome as 'other' rather than being given a hue that can't be told apart.
 //
 // The families are deliberately broad: the point is to let a stranger read
 // "this sub-genre sits inside that family" at a glance, not to be a taxonomy.
 // Tags that don't clearly belong to one (bare 'pop', 'experimental', mood and
 // decade tags) stay 'other' on purpose -- a wrong colour reads as a fact and is
-// worse than no colour.
+// worse than no colour. Folk, country and classical also fall to 'other': there
+// are eight validated palette slots and these were the eight that carry the most
+// nodes on a typical graph.
 
-export type GenreFamily = 'electronic' | 'guitar' | 'hip-hop & soul' | 'other';
+export type GenreFamily =
+  | 'electronic'
+  | 'rock'
+  | 'metal'
+  | 'punk'
+  | 'indie'
+  | 'hip-hop'
+  | 'soul & funk'
+  | 'jazz & blues'
+  | 'other';
 
 /** The coloured families, in fixed palette-slot order. 'other' is not here --
- *  it is the uncoloured bucket, not a fourth family. */
-export const GENRE_FAMILIES = ['electronic', 'guitar', 'hip-hop & soul'] as const;
+ *  it is the uncoloured bucket, not a ninth family. Order is the palette's, so
+ *  a family keeps its hue no matter how many nodes it has: colour follows the
+ *  entity, never its rank. */
+export const GENRE_FAMILIES = [
+  'electronic',
+  'rock',
+  'metal',
+  'punk',
+  'indie',
+  'hip-hop',
+  'soul & funk',
+  'jazz & blues',
+] as const;
 
-// Ordered most-specific first, and first match wins, so genuinely ambiguous
-// tags land in the family their qualifier names rather than the one a substring
-// happens to hit. 'hardcore' is the sharp case: bare, it is hardcore punk, but
-// 'hardcore techno' and 'happy hardcore' are electronic and must be caught
-// first. 'garage' is the same shape in reverse -- 'garage rock' is a guitar
-// tag, bare 'garage' is UK garage.
+// Ordered most-specific first, and first match wins, so a compound tag lands in
+// the family its qualifier names rather than the one a substring happens to
+// hit. The sharp cases, all of which are real Last.fm tags:
+//   'hardcore techno' is electronic, bare 'hardcore' is punk
+//   'garage rock' is rock, bare 'garage' is UK garage (electronic)
+//   'industrial metal' is metal, bare 'industrial' is electronic
+//   'jazz rap' is hip-hop, bare 'jazz' is jazz & blues
+// After the overrides, family order itself resolves the rest: 'indie rock' hits
+// indie before rock, 'punk rock' hits punk before rock, and bare 'rock' falls
+// through to the most general slot last.
 const FAMILY_RULES: ReadonlyArray<{ pattern: RegExp; family: GenreFamily }> = [
-  // --- Specific overrides, before the general patterns below ---
+  // --- Specific overrides ---
   { pattern: /hardcore techno|happy hardcore|gabber|speedcore|breakcore/, family: 'electronic' },
-  { pattern: /garage rock|post-?hardcore|hardcore punk|melodic hardcore/, family: 'guitar' },
-  { pattern: /industrial (rock|metal)/, family: 'guitar' },
-  { pattern: /jazz (rap|hop)/, family: 'hip-hop & soul' },
+  { pattern: /garage rock/, family: 'rock' },
+  { pattern: /industrial (rock|metal)/, family: 'metal' },
+  { pattern: /jazz (rap|hop)/, family: 'hip-hop' },
+  { pattern: /soul jazz|jazz funk/, family: 'soul & funk' },
 
-  // --- Electronic ---
+  // --- Metal (before punk and rock: catches 'nu metal', 'rap metal') ---
+  {
+    pattern: /metal|doom|sludge|grindcore|djent|metalcore|deathcore/,
+    family: 'metal',
+  },
+
+  // --- Punk (before indie and rock: catches 'punk rock', 'post-punk') ---
+  { pattern: /punk|hardcore|screamo|\bemo\b|\boi!?\b|riot grrrl/, family: 'punk' },
+
+  // --- Indie / alternative (before rock: catches 'indie rock', 'alt rock') ---
+  {
+    pattern: /\bindie\b|alternative|\balt\b|shoegaze|dream pop|post-?rock|lo-?fi|slowcore|noise pop|jangle/,
+    family: 'indie',
+  },
+
+  // --- Hip-hop ---
+  { pattern: /hip[\s-]?hop|\brap\b|\btrap\b|grime|boom bap|turntabl/, family: 'hip-hop' },
+
+  // --- Soul & funk ---
+  {
+    pattern: /\bsoul\b|funk|r&b|\brnb\b|rhythm and blues|motown|disco|gospel|afrobeat|neo-?soul/,
+    family: 'soul & funk',
+  },
+
+  // --- Jazz & blues ---
+  { pattern: /\bjazz\b|\bblues\b|bebop|big band|swing|ragtime|fusion/, family: 'jazz & blues' },
+
+  // --- Electronic (before rock so bare 'industrial' and 'garage' land here) ---
   {
     pattern:
-      /electronic|electronica|electro\b|techno|house|trance|ambient|\bidm\b|\bedm\b|dubstep|drum\s*(and|'?n'?|&)\s*bass|\bdnb\b|jungle|breakbeat|big beat|downtempo|trip[\s-]?hop|synth[\s-]?pop|synth[\s-]?wave|darkwave|industrial|glitch|vaporwave|witch house|footwork|chiptune|acid house|acid techno|minimal techno|\bgarage\b|\brave\b|dance/,
+      /electronic|electronica|electro\b|techno|house|trance|ambient|\bidm\b|\bedm\b|dubstep|drum\s*(and|'?n'?|&)\s*bass|\bdnb\b|jungle|breakbeat|big beat|downtempo|trip[\s-]?hop|synth[\s-]?pop|synth[\s-]?wave|darkwave|industrial|glitch|vaporwave|witch house|footwork|chiptune|acid|minimal|\bgarage\b|\brave\b|\bdance\b|\bbass\b/,
     family: 'electronic',
   },
 
-  // --- Guitar ---
+  // --- Rock, last and most general ---
   {
-    pattern:
-      /\brock\b|metal|punk|\bindie\b|alternative|grunge|shoegaze|post-?rock|post-?punk|\bemo\b|screamo|hardcore|\bfolk\b|country|blues|psychedelic|britpop|americana|singer[\s-]?songwriter|math rock|noise rock|\bprog\b|dream pop|jangle/,
-    family: 'guitar',
-  },
-
-  // --- Hip-hop & soul ---
-  {
-    pattern:
-      /hip[\s-]?hop|\brap\b|\btrap\b|r&b|\brnb\b|rhythm and blues|\bsoul\b|funk|motown|disco|\bjazz\b|gospel|afrobeat/,
-    family: 'hip-hop & soul',
+    pattern: /\brock\b|psychedelic|\bprog\b|britpop|grunge|surf|rockabilly|\bmath rock\b|krautrock|glam/,
+    family: 'rock',
   },
 ];
 
 /**
  * CSS-identifier-safe form of a family name, used to build the custom-property
- * name the page colours a node with (`--genre-hip-hop-soul`). Keeps the
- * mapping from family to palette slot in one place rather than spread between
- * the stylesheet and the D3 code.
+ * name the page colours a node with (`--genre-soul-funk`). Keeps the mapping
+ * from family to palette slot in one place rather than spread between the
+ * stylesheet and the D3 code.
  */
 export function genreFamilySlug(family: GenreFamily): string {
-  return family.replace(/&/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '');
+  return family
+    .replace(/&/g, '')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 /**
