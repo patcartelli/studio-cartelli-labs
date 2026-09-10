@@ -2,16 +2,117 @@
 @import './motion.css';
 
 /* ============================================================
-   FONTS
-   The main studiocartelli.com site self-hosts a licensed commercial
-   font family (Polymath). That license is non-transferable and
-   explicitly prohibits redistribution — the font binaries are NOT
-   included in this public repo (labs-split Phase 1, D-03).
+   FONT FACES — Polymath (licensed, NOT redistributed)
 
-   This fork uses a system-font fallback stack instead. Visually
-   close (both are humanist sans/serif-adjacent, similar x-height),
-   but not pixel-identical to the live studiocartelli.com site.
+   The font binaries are deliberately NOT in this repo. They are
+   referenced by URL only, and served by the MAIN studiocartelli.com
+   Worker out of its own private repo's /public/fonts/.
+
+   Why that is safe, and why it works:
+
+   - LICENSING. Nothing here is a font binary — these are URL strings.
+     The repo can stay public without redistributing the software.
+     studiocartelli.com/lab is the same domain as the licensed
+     deployment, so /lab traffic counts against the existing OH no Type
+     web license (500k monthly page views) rather than needing a new
+     one. License docs live in the main repo, /docs/fonts-licenses/.
+
+   - ROUTING. This Worker is routed at studiocartelli.com/lab and
+     /lab/* ONLY (see wrangler.toml). A request for /fonts/*.woff2 is
+     outside that pattern, so the zone falls it through to the main
+     studio-cartelli Worker, which serves it from /public/fonts/.
+     Same origin — no CORS, no hotlinking, no second copy.
+
+   - THE `base` TRAP. astro.config.mjs sets base:'/lab'. Vite does NOT
+     rewrite root-absolute url() paths in CSS with that prefix — this
+     was verified against a real build, and the emitted CSS keeps
+     `url(/fonts/...)` verbatim. That is exactly what we need: if it
+     were rewritten to /lab/fonts/... it would match THIS Worker's
+     route and 404. Do not "fix" these paths to be base-relative.
+
+   - LOCAL DEV. The dev server has no main site behind it, and serves
+     public/ under the base prefix (/lab/fonts/... — also verified).
+     So each face lists a SECOND src pointing there. Drop your own
+     licensed copies into public/fonts/ (gitignored, never committed)
+     and local dev renders in Polymath. Without them the first src
+     404s, the second 404s, and the stack below falls back to system
+     fonts — the site still works, just not pixel-identical.
+
+     In production the FIRST src resolves, so the /lab/fonts/ entry is
+     never requested; it costs nothing there.
    ============================================================ */
+
+@font-face {
+  font-family: 'Polymath Display';
+  src:
+    url('/fonts/PolymathDisp-Semibold.woff2') format('woff2'),
+    url('/fonts/PolymathDisp-Semibold.woff') format('woff'),
+    url('/lab/fonts/PolymathDisp-Semibold.woff2') format('woff2'),
+    url('/lab/fonts/PolymathDisp-Semibold.woff') format('woff');
+  font-weight: 600 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Polymath Display';
+  src:
+    url('/fonts/PolymathDisp-SemiboldIt.woff2') format('woff2'),
+    url('/fonts/PolymathDisp-SemiboldIt.woff') format('woff'),
+    url('/lab/fonts/PolymathDisp-SemiboldIt.woff2') format('woff2'),
+    url('/lab/fonts/PolymathDisp-SemiboldIt.woff') format('woff');
+  font-weight: 600 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Polymath Text';
+  src:
+    url('/fonts/PolymathText-Regular.woff2') format('woff2'),
+    url('/fonts/PolymathText-Regular.woff') format('woff'),
+    url('/lab/fonts/PolymathText-Regular.woff2') format('woff2'),
+    url('/lab/fonts/PolymathText-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Polymath Text';
+  src:
+    url('/fonts/PolymathText-Italic.woff2') format('woff2'),
+    url('/fonts/PolymathText-Italic.woff') format('woff'),
+    url('/lab/fonts/PolymathText-Italic.woff2') format('woff2'),
+    url('/lab/fonts/PolymathText-Italic.woff') format('woff');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Polymath Text';
+  src:
+    url('/fonts/PolymathText-Bold.woff2') format('woff2'),
+    url('/fonts/PolymathText-Bold.woff') format('woff'),
+    url('/lab/fonts/PolymathText-Bold.woff2') format('woff2'),
+    url('/lab/fonts/PolymathText-Bold.woff') format('woff');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Polymath Text';
+  src:
+    url('/fonts/PolymathText-BoldIt.woff2') format('woff2'),
+    url('/fonts/PolymathText-BoldIt.woff') format('woff'),
+    url('/lab/fonts/PolymathText-BoldIt.woff2') format('woff2'),
+    url('/lab/fonts/PolymathText-BoldIt.woff') format('woff');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
 
 /* ============================================================
    DESIGN TOKENS
@@ -36,9 +137,12 @@
   --color-border: #e0e0e0;               /* thin rule lines */
   --color-surface-subtle: #f0f0f0;   /* skeleton/placeholder surface */
 
-  /* Typography — system-font fallback stack (see FONTS note above) */
-  --font-display: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  /* Typography — Polymath first (see FONT FACES note above), with the
+     previous system stack retained behind it. The fallbacks are load-
+     bearing, not decorative: a fresh public clone has no licensed font
+     files, so local dev renders on these. Keep them. */
+  --font-display: 'Polymath Display', Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  --font-body: 'Polymath Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'Fira Code', 'DM Mono', monospace;
 
   /* Type scale — Material 3 */

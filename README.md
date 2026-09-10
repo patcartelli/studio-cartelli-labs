@@ -18,7 +18,18 @@ Live at [studiocartelli.com/lab](https://studiocartelli.com/lab):
 
 ## Note on fonts
 
-The main studiocartelli.com site self-hosts a paid, non-redistributable commercial font family. Those font files are **not** included in this repo (see `src/styles/global.css`) — this fork uses a system-font fallback stack instead, so a local clone won't look pixel-identical to the live site's chrome (nav/footer/headings). The actual experiments (chart, network, life) are unaffected.
+This site renders in **Polymath**, licensed from [OH no Type Company](https://ohnotype.co) for studiocartelli.com. The license prohibits redistribution, so **the font files are not in this repo and never will be** — `.gitignore` blocks every font format repo-wide, and a CI job fails any PR that tracks one.
+
+The site still gets the real font, because it is referenced by URL rather than bundled. This Worker is routed at `studiocartelli.com/lab` and `/lab/*` only, so a request for `/fonts/*.woff2` falls outside that route and the zone serves it from the main studiocartelli.com Worker. Same origin, one licensed copy, no second deployment — and `/lab` traffic counts against the existing page-view tier rather than needing a new license.
+
+**Cloning this repo gets you a working site.** Nothing needs a font binary to build, test, or deploy. Without licensed copies on disk you'll see the fallback stack (Georgia / system sans) in local dev, so the chrome — nav, footer, headings — won't be pixel-identical to production. The experiments themselves are unaffected.
+
+If you *do* hold a Polymath license and want local dev to match production, drop your copies into `public/fonts/` using the filenames in the `@font-face` rules in `src/styles/global.css`. That directory is gitignored; the dev server serves it at `/lab/fonts/*`, which is the second `src` in each rule.
+
+Two things not to "fix" in `src/styles/global.css`:
+
+- The `url()` paths are **root-absolute on purpose**. `astro.config.mjs` sets `base: '/lab'`, but Vite does not apply that prefix to root-absolute `url()` in CSS (verified against a real build). Rewriting them to `/lab/fonts/...` would match *this* Worker's route and 404.
+- The system fonts after Polymath in `--font-display` / `--font-body` are **load-bearing**, not decorative — they're what a fresh clone actually renders on.
 
 ## Development
 

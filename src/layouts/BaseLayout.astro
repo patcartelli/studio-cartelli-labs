@@ -67,10 +67,29 @@ const resolvedOgTitle = ogTitle ?? title;
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
-    {/* No font preloads here — this repo uses the system-font fallback
-       stack (see src/styles/global.css) rather than the main site's
-       licensed, non-redistributable Polymath fonts (labs-split Phase 1,
-       D-03). */}
+    {/* Polymath preloads, mirroring the main site's BaseLayout. These are
+       URLs only — no font binary lives in this repo (see the FONT FACES
+       note in src/styles/global.css for the licensing and routing
+       rationale).
+
+       Root-absolute on purpose: /fonts/* falls outside this Worker's
+       studiocartelli.com/lab* route, so the zone serves it from the main
+       studio-cartelli Worker. Do not prefix these with the /lab base.
+
+       `crossorigin` is required even though this is same-origin in
+       production: font fetches are always CORS-mode, and a preload
+       without it is treated as a different request than the one
+       @font-face makes, causing the file to be downloaded twice.
+
+       Only the three faces used above the fold are preloaded (matching
+       the main site); the italic and bold-italic faces load on demand.
+
+       In local dev these 404 harmlessly — there is no main site behind
+       the dev server. The @font-face rules carry a /lab/fonts/ fallback
+       for that case. */}
+    <link rel="preload" href="/fonts/PolymathDisp-Semibold.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/PolymathText-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/PolymathText-Bold.woff2" as="font" type="font/woff2" crossorigin />
 
     <slot name="head" />
 

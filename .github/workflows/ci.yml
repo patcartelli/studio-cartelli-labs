@@ -19,6 +19,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Guards the OH no Type license. .gitignore keeps font binaries out by
+  # default, but it is advisory — `git add -f` walks straight past it, and
+  # a font arriving via a merge or a rebase never consults it at all. This
+  # is the backstop: it inspects what is actually tracked in the commit.
+  #
+  # Cheap on purpose (no deps, no build) so it can gate every PR without
+  # slowing anything down.
+  font-license-guard:
+    name: No font binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if any font binary is tracked
+        run: |
+          # Uses git ls-files (tracked content only) rather than find, so
+          # build output, node_modules, and any local untracked licensed
+          # copies in public/fonts/ are correctly ignored.
+          matches="$(git ls-files -- '*.woff' '*.woff2' '*.otf' '*.ttf' '*.eot')"
+          if [ -n "$matches" ]; then
+            echo "::error::Font binaries are tracked in this public repo. studiocartelli.com licenses Polymath from OH no Type under terms that prohibit redistribution; committing the files here breaches that license."
+            echo "Offending files:"
+            echo "$matches" | sed 's/^/  /'
+            echo ""
+            echo "The /lab site does not need these committed — src/styles/global.css"
+            echo "references them by URL and the main studiocartelli.com Worker serves"
+            echo "them. For local work, keep licensed copies in public/fonts/, which"
+            echo "is gitignored."
+            echo ""
+            echo "If this is an openly-licensed font (SIL OFL or similar), add it to"
+            echo "the allowlist in .github/workflows/ci.yml with its license noted."
+            exit 1
+          fi
+          echo "No font binaries tracked."
+
   type-check:
     name: Type Check
     runs-on: ubuntu-latest
