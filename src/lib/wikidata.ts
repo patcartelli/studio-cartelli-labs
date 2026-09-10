@@ -7,6 +7,18 @@ export interface InfluenceLink {
   to: string;
 }
 
+export interface ArtistInception {
+  name: string;
+  year: number;
+}
+
+/** Build a SPARQL VALUES list of `"Name"@en` literals for a batch of artist names. */
+function toValuesClause(names: string[]): string {
+  return names
+    .map((n) => `"${n.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"@en`)
+    .join('\n    ');
+}
+
 interface WikidataSparqlImageResponse {
   results?: {
     bindings?: Array<{
@@ -25,10 +37,7 @@ interface WikidataSparqlImageResponse {
 export async function getInfluenceLinks(artistNames: string[]): Promise<InfluenceLink[]> {
   if (artistNames.length === 0) return [];
 
-  // Build VALUES clause: "Artist Name"@en for each artist
-  const values = artistNames
-    .map((n) => `"${n.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"@en`)
-    .join('\n    ');
+  const values = toValuesClause(artistNames);
 
   const query = `
     SELECT DISTINCT (STR(?fromLabel) AS ?from) (STR(?toLabel) AS ?to) WHERE {
@@ -63,6 +72,59 @@ export async function getInfluenceLinks(artistNames: string[]): Promise<Influenc
       from: b.from.value,
       to: b.to.value,
     }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Find formation year (Wikidata P571 "inception") for artists in the
+ * provided list (STC-334). Chronology lets a viewer read "who came first"
+ * even for a pair with no explicit P737 influence claim between them.
+ *
+ * P571 is an organization/group property, not P569 "date of birth" -- solo
+ * artists won't have a value here. That's a deliberate scope decision (see
+ * STC-334): sparse coverage beats a second query pattern to maintain.
+ *
+ * An entity with more than one P571 statement (rare) resolves to its
+ * earliest, via MIN(YEAR(...)).
+ */
+export async function getInceptionYears(artistNames: string[]): Promise<ArtistInception[]> {
+  if (artistNames.length === 0) return [];
+
+  const values = toValuesClause(artistNames);
+
+  const query = `
+    SELECT (STR(?nameLabel) AS ?name) (MIN(YEAR(?inception)) AS ?year) WHERE {
+      VALUES ?nameLabel { ${values} }
+      ?entity rdfs:label ?nameLabel ;
+              wdt:P571 ?inception .
+    }
+    GROUP BY ?nameLabel
+  `;
+
+  const url = new URL(SPARQL_ENDPOINT);
+  url.searchParams.set('query', query);
+  url.searchParams.set('format', 'json');
+
+  try {
+    const res = await fetch(url.toString(), {
+      headers: {
+        'User-Agent': 'StudioCartelli/1.0 (https://studiocartelli.com; contact@studiocartelli.com)',
+        'Accept': 'application/sparql-results+json',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) return [];
+
+    const data = await res.json() as {
+      results: { bindings: Array<{ name: { value: string }; year: { value: string } }> }
+    };
+
+    return (data.results?.bindings ?? [])
+      .map((b) => ({ name: b.name.value, year: parseInt(b.year.value, 10) }))
+      .filter((a) => Number.isFinite(a.year));
   } catch {
     return [];
   }

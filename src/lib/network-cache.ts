@@ -4,8 +4,8 @@
 
 import { getTopArtists, getArtistTags, getArtistSimilar, batchFetch } from './lastfm';
 import type { Artist } from './lastfm';
-import { getInfluenceLinks } from './wikidata';
-import type { InfluenceLink } from './wikidata';
+import { getInfluenceLinks, getInceptionYears } from './wikidata';
+import type { InfluenceLink, ArtistInception } from './wikidata';
 import type { PipelineEnv } from './pipeline-env';
 
 interface CacheMetadata {
@@ -24,6 +24,7 @@ interface NetworkRawData {
   allTags: string[][];
   allSimilar: { name: string; similarity: number }[][];
   influences: InfluenceLink[];
+  chronology: ArtistInception[];
 }
 
 export interface NetworkCacheResult {
@@ -108,7 +109,8 @@ async function advancePeriodBuild(
   env: LastfmEnv,
   period: string,
   chunkSize: number,
-  influencesFetcher: (names: string[]) => Promise<InfluenceLink[]>
+  influencesFetcher: (names: string[]) => Promise<InfluenceLink[]>,
+  chronologyFetcher: (names: string[]) => Promise<ArtistInception[]>
 ): Promise<void> {
   const dataKey = `network:${period}`;
   const progressKey = `network:warm:${period}`;
@@ -141,11 +143,18 @@ async function advancePeriodBuild(
     // FINALIZE: assemble the complete NetworkRawData and write it atomically.
     const artistNames = progress.artists.map((a) => a.name);
 
-    // D-09: Wikidata is independently failable; empty influences[] is a
-    // valid degraded state (1 subrequest).
+    // D-09: Wikidata is independently failable; empty influences[]/chronology[]
+    // is a valid degraded state (1 subrequest each).
     let influences: InfluenceLink[] = [];
     try {
       influences = await influencesFetcher(artistNames);
+    } catch {
+      /* silently degrade */
+    }
+
+    let chronology: ArtistInception[] = [];
+    try {
+      chronology = await chronologyFetcher(artistNames);
     } catch {
       /* silently degrade */
     }
@@ -155,6 +164,7 @@ async function advancePeriodBuild(
       allTags: progress.allTags,
       allSimilar: progress.allSimilar,
       influences,
+      chronology,
     };
     // No TTL expiry on KV entry -- stale data stays readable for fallback when APIs are unreachable (D-01)
     await kv.put(dataKey, JSON.stringify(data), {
@@ -189,20 +199,22 @@ function withEnrichedArtistsOnly(data: NetworkRawData): NetworkRawData {
   if (enriched === data.artists.length) return data;
 
   const artists = data.artists.slice(0, enriched);
-  // Influence links reference artist names; network.astro drops any whose
-  // endpoints aren't in the served artist list, so they need no filtering here.
+  // Influence links and chronology entries reference artist names, not array
+  // position; network.astro drops any whose artist isn't in the served list,
+  // so they need no filtering here.
   return {
     artists,
     allTags: data.allTags.slice(0, enriched),
     allSimilar: data.allSimilar.slice(0, enriched),
     influences: data.influences,
+    chronology: data.chronology,
   };
 }
 
 /**
  * Return cached network page data from KV, advancing the build if stale or
- * missing. Bundles all 4 data sources (artists, tags, similar, influences)
- * in a single KV entry per period.
+ * missing. Bundles all 5 data sources (artists, tags, similar, influences,
+ * chronology) in a single KV entry per period.
  *
  * On a stale/missing cache this advances the resumable build by one bounded
  * chunk (see advancePeriodBuild) rather than fetching the full artist list
@@ -217,12 +229,14 @@ function withEnrichedArtistsOnly(data: NetworkRawData): NetworkRawData {
  * Throws only if no cached, finalized, or in-progress data is available.
  *
  * @param _influencesFetcher - Injectable test seam for the Wikidata influences lookup; defaults to getInfluenceLinks.
+ * @param _chronologyFetcher - Injectable test seam for the Wikidata inception-year lookup; defaults to getInceptionYears.
  */
 export async function getCachedNetworkData(
   kv: KVNamespace,
   env: LastfmEnv,
   period: string,
-  _influencesFetcher: (names: string[]) => Promise<InfluenceLink[]> = getInfluenceLinks
+  _influencesFetcher: (names: string[]) => Promise<InfluenceLink[]> = getInfluenceLinks,
+  _chronologyFetcher: (names: string[]) => Promise<ArtistInception[]> = getInceptionYears
 ): Promise<NetworkCacheResult> {
   const dataKey = `network:${period}`;
   const readData = () =>
@@ -240,7 +254,14 @@ export async function getCachedNetworkData(
 
   // Cache miss or stale -- advance the resumable build by one bounded chunk.
   try {
-    await advancePeriodBuild(kv, env, period, NETWORK_WARM_CHUNK_SIZE, _influencesFetcher);
+    await advancePeriodBuild(
+      kv,
+      env,
+      period,
+      NETWORK_WARM_CHUNK_SIZE,
+      _influencesFetcher,
+      _chronologyFetcher
+    );
   } catch (err) {
     // NCACHE-03: fall back to expired KV data if available
     if (value !== null) {
@@ -283,6 +304,7 @@ export async function getCachedNetworkData(
         allTags: progress.allTags,
         allSimilar: progress.allSimilar,
         influences: [],
+        chronology: [],
       }),
       fetchedAt: progress.startedAt,
       isStale: true,
@@ -325,7 +347,7 @@ export async function warmNetworkCache(
         !!metadata && Date.now() - metadata.fetchedAt <= NETWORK_WARM_REFRESH_SECONDS * 1000;
       if (isFresh) continue; // this period is warm; try the next one
 
-      await advancePeriodBuild(kv, env, period, _chunkSize, getInfluenceLinks);
+      await advancePeriodBuild(kv, env, period, _chunkSize, getInfluenceLinks, getInceptionYears);
 
       // Only advance the first non-fresh period per invocation.
       return;
