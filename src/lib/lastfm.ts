@@ -79,7 +79,7 @@ async function fetchLastfm(
   // Fixture check precedes the credential guard on purpose — "no API key" is
   // exactly the CI condition this stands in for. See lastfm-fixture.ts.
   if (isFixtureMode(env)) {
-    return getFixturePayload(params.method, Number(params.limit) || 50);
+    return getFixturePayload(params.method, Number(params.limit) || 50, params.artist);
   }
 
   const apiKey = env.LASTFM_API_KEY;

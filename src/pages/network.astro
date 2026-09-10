@@ -74,7 +74,18 @@ function formatRelativeAge(ts: number): string {
   return `${ageHr} hr ago`;
 }
 
-if (!cfEnv.LASTFM_API_KEY || !cfEnv.LASTFM_USERNAME || !kv) {
+// Deliberately does NOT precondition on LASTFM_API_KEY/LASTFM_USERNAME the
+// way an earlier version did: that blocked LASTFM_FIXTURE mode (which needs
+// no credentials -- fetchLastfm's fixture short-circuit runs before its own
+// credential guard, see lastfm-fixture.ts) from ever reaching the fetch
+// below, so every data-gated Playwright test in tests/lab-network.spec.ts
+// hit its `if (errorVisible) { skip }` branch and silently no-op'ed in CI --
+// the exact false-green failure mode lastfm-fixture.ts's own header
+// describes for /lab/chart, just never fixed here too (STC-344).
+// chart.astro's pattern (try the fetch, let missing real credentials throw
+// and land in the catch below) is what actually needs to happen for both
+// pages.
+if (!kv) {
   hasError = true;
 } else {
   try {
