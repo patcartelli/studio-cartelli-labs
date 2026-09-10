@@ -729,12 +729,8 @@ const staleAgeText = formatRelativeAge(fetchedAt);
 <script>
   import * as d3 from 'd3';
   import { assignGenres } from '../lib/network-genre';
-  import {
-    genreFamilyForTags,
-    genreFamilySlug,
-    GENRE_FAMILIES,
-    type GenreFamily,
-  } from '../lib/genre-families';
+  // GENRE_FAMILIES is used in the frontmatter to build the legend, not here.
+  import { genreFamilyForTags, genreFamilySlug, type GenreFamily } from '../lib/genre-families';
 
   function initNetwork() {
     const scriptTag = document.getElementById('graph-data');
