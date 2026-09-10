@@ -45,6 +45,8 @@
 import topalbums from './fixtures/lastfm-topalbums';
 import topartists from './fixtures/lastfm-topartists';
 import toptracks from './fixtures/lastfm-toptracks';
+import toptags from './fixtures/lastfm-toptags';
+import similarartists from './fixtures/lastfm-similarartists';
 
 interface FixtureEnv {
   LASTFM_FIXTURE?: string;
@@ -61,6 +63,20 @@ const PAYLOADS: Record<string, unknown> = {
   'user.getTopTracks': toptracks,
 };
 
+// artist.getTopTags/artist.getSimilar are keyed by the artist being queried,
+// not a single whole-chart payload -- see the header comments in
+// lastfm-toptags.ts/lastfm-similarartists.ts for why these are hand-authored
+// rather than captured, and how to regenerate them.
+const PER_ARTIST_PAYLOADS: Record<string, Record<string, unknown>> = {
+  'artist.getTopTags': toptags,
+  'artist.getSimilar': similarartists,
+};
+
+const EMPTY_PER_ARTIST_PAYLOAD: Record<string, unknown> = {
+  'artist.getTopTags': { toptags: { tag: [] } },
+  'artist.getSimilar': { similarartists: { artist: [] } },
+};
+
 /**
  * Raw Last.fm payload for a method, trimmed to `limit` entries.
  *
@@ -70,11 +86,25 @@ const PAYLOADS: Record<string, unknown> = {
  * whole thing — same as the real API, which returns what exists rather than
  * padding to the requested limit.
  *
+ * For a per-artist method (see PER_ARTIST_PAYLOADS), `artist` selects which
+ * entry to return; an artist with no fixture entry degrades to an empty
+ * result rather than throwing, matching how getArtistTags/getArtistSimilar
+ * already treat a genuinely absent value in production (D-09-style
+ * degradation, not a hard failure).
+ *
  * Throws on an unknown method rather than returning null: a silent null here
  * would resurface as an empty page and a wall of skipped tests, which is the
  * exact failure mode this module exists to prevent.
  */
-export function getFixturePayload(method: string, limit: number): unknown {
+export function getFixturePayload(method: string, limit: number, artist?: string): unknown {
+  if (method in PER_ARTIST_PAYLOADS) {
+    const table = PER_ARTIST_PAYLOADS[method];
+    const key = artist
+      ? Object.keys(table).find((name) => name.toLowerCase() === artist.toLowerCase())
+      : undefined;
+    return key ? table[key] : EMPTY_PER_ARTIST_PAYLOAD[method];
+  }
+
   const payload = PAYLOADS[method];
   if (!payload) {
     throw new Error(
