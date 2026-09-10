@@ -35,3 +35,27 @@ export function assignGenres(
 
   return { primary, secondary };
 }
+
+/**
+ * Pick the top `limit` genres by node count, excluding 'other'.
+ *
+ * Capped at 3 by default (STC-339): this is an "all-pairs" visualization --
+ * any two genre poles/nodes can be visually compared at once, not just
+ * neighbors -- and the site's validated categorical palette only clears the
+ * colorblind-safety and contrast floors for 3 simultaneous hues in that
+ * mode (see the --network-genre-* custom properties in network.astro).
+ * Anything past the cap folds into the neutral "other" bucket rather than
+ * getting an unvalidated 4th+ hue.
+ */
+export function selectTopGenres(primaryGenres: Map<string, string>, limit = 3): string[] {
+  const counts = new Map<string, number>();
+  primaryGenres.forEach((genre) => {
+    if (genre === 'other') return;
+    counts.set(genre, (counts.get(genre) ?? 0) + 1);
+  });
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([genre]) => genre);
+}

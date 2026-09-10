@@ -70,7 +70,17 @@ function formatRelativeAge(ts: number): string {
   return `${ageHr} hr ago`;
 }
 
-if (!cfEnv.LASTFM_API_KEY || !cfEnv.LASTFM_USERNAME || !kv) {
+// Deliberately does NOT precondition on LASTFM_API_KEY/LASTFM_USERNAME the
+// way an earlier version did: that blocked LASTFM_FIXTURE mode (which needs
+// no credentials -- fetchLastfm's fixture short-circuit runs before its own
+// credential guard, see lastfm-fixture.ts) from ever reaching the fetch
+// below, so every data-gated Playwright test in tests/lab-network.spec.ts
+// hit its `if (errorVisible) { skip }` branch and silently no-op'ed in CI --
+// the exact false-green failure mode lastfm-fixture.ts's own header
+// describes for /lab/chart, just never fixed here too. chart.astro's
+// pattern (try the fetch, let missing real credentials throw and land in
+// the catch below) is what actually needs to happen for both pages.
+if (!kv) {
   hasError = true;
 } else {
   try {
@@ -330,6 +340,22 @@ const staleAgeText = formatRelativeAge(fetchedAt);
   .network {
     padding-top: var(--space-2xl);
     padding-bottom: var(--space-xl);
+    /* STC-339: genre color-coding. Only the top 3 genres by node count get a
+       color -- see references/palette.md in the dataviz skill: this is an
+       "all-pairs" visualization (any two genre poles/nodes can be compared
+       at once, not just neighbors), and its validated categorical palette
+       only clears the colorblind-safety and contrast floors for 3
+       simultaneous hues in that mode. Everything else (a 4th+ genre, or no
+       tags at all) stays the original ink color rather than getting a 4th,
+       unvalidated hue. */
+    --network-genre-1: #2a78d6; /* blue */
+    --network-genre-2: #eb6834; /* orange */
+    --network-genre-3: #1baf7a; /* aqua */
+  }
+  :root[data-theme="dark"] .network {
+    --network-genre-1: #3987e5;
+    --network-genre-2: #d95926;
+    --network-genre-3: #199e70;
   }
   .network__heading {
     font-family: var(--font-display);
@@ -554,7 +580,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
 
 <script>
   import * as d3 from 'd3';
-  import { assignGenres } from '../lib/network-genre';
+  import { assignGenres, selectTopGenres } from '../lib/network-genre';
 
   function initNetwork() {
     const scriptTag = document.getElementById('graph-data');
@@ -684,6 +710,85 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       nodeTagsRaw
     );
 
+    // --- Genre color coding (STC-339) ---
+    // Only the top 3 genres by node count get a color slot -- see the
+    // --network-genre-* custom properties above for why 3 is the cap.
+    // Always on (not gated behind the genre/cluster toggle below): a
+    // stranger should be able to read genre from color the moment the page
+    // loads, without needing to know there's a toggle.
+    const topGenres = selectTopGenres(nodeGenre);
+
+    const GENRE_COLOR_VARS = ['--network-genre-1', '--network-genre-2', '--network-genre-3'];
+    const DEFAULT_NODE_COLOR = 'var(--color-on-surface)';
+    const DEFAULT_LINK_COLOR = 'var(--color-border)';
+
+    function colorForGenre(genre: string | undefined, fallback: string): string {
+      const slot = genre !== undefined ? topGenres.indexOf(genre) : -1;
+      return slot === -1 ? fallback : `var(${GENRE_COLOR_VARS[slot]})`;
+    }
+
+    // --- Legend ---
+    // "In frame" by construction: an absolutely-positioned overlay inside
+    // #network-container, so it's part of the same element requestFullscreen
+    // targets and any screen capture of the canvas. Skipped entirely when
+    // there's nothing to explain (no tagged artists in this dataset).
+    //
+    // Styled inline rather than via the scoped <style> block above: Astro
+    // scopes those rules by rewriting selectors to also require a
+    // data-astro-cid-* attribute that only gets stamped onto elements
+    // present in this file's own template at build time -- an element
+    // created here, client-side, never has it, so a `.network__legend`
+    // class rule would silently never match. The tooltip below (and
+    // everywhere else this script builds DOM) uses the same inline-style
+    // convention for the same reason.
+    if (topGenres.length > 0) {
+      const hasOther = nodes.some((n) => !topGenres.includes(nodeGenre.get(n.id) ?? ''));
+
+      const legend = document.createElement('div');
+      legend.className = 'network__legend'; // identification only -- see note above, no stylesheet rule targets this
+      Object.assign(legend.style, {
+        position: 'absolute',
+        left: '8px',
+        bottom: '8px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        padding: '6px 10px',
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
+        borderRadius: '4px',
+        fontSize: 'var(--text-label-small)',
+        color: 'var(--color-on-surface-dimmed)',
+        pointerEvents: 'none',
+        zIndex: '1',
+      });
+
+      function addLegendRow(color: string, label: string, swatchOpacity?: string): void {
+        const row = document.createElement('div');
+        Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '6px' });
+
+        const swatch = document.createElement('span');
+        Object.assign(swatch.style, {
+          display: 'inline-block',
+          width: '9px',
+          height: '9px',
+          borderRadius: '50%',
+          flexShrink: '0',
+          background: color,
+        });
+        if (swatchOpacity) swatch.style.opacity = swatchOpacity;
+
+        row.appendChild(swatch);
+        row.appendChild(document.createTextNode(label));
+        legend.appendChild(row);
+      }
+
+      topGenres.forEach((genre, i) => addLegendRow(`var(${GENRE_COLOR_VARS[i]})`, genre));
+      if (hasOther) addLegendRow('var(--color-on-surface)', 'other', '0.5');
+
+      container.appendChild(legend);
+    }
+
     // --- Genre nodes and links ---
     const genres = Array.from(new Set(nodeGenre.values()));
     const poleRadius = Math.min(width, height) * 0.35;
@@ -779,13 +884,23 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     for (let i = 0; i < 300; i++) simulation.tick();
 
     // Links
+    // STC-339: tint a link with its shared genre color only when both
+    // endpoints have the same top-3 genre -- by this point the simulation
+    // has already ticked (see above), so forceLink has resolved
+    // source/target from ids to node object references.
     const link = g
       .append('g')
-      .attr('stroke', 'var(--color-border)')
       .attr('stroke-opacity', 0.5)
       .selectAll('line')
       .data(links)
       .join('line')
+      .attr('stroke', (d: any) => {
+        const sourceGenre = nodeGenre.get(d.source.id ?? d.source);
+        const targetGenre = nodeGenre.get(d.target.id ?? d.target);
+        return sourceGenre && sourceGenre === targetGenre
+          ? colorForGenre(sourceGenre, DEFAULT_LINK_COLOR)
+          : DEFAULT_LINK_COLOR;
+      })
       .attr('stroke-width', 1)
       .attr('marker-end', (d: any) => {
         const ld = d as { influenceDirection?: string };
@@ -834,7 +949,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       .data(nodes as NodeDatum[])
       .join('circle')
       .attr('r', (d) => radiusScale(d.playcount))
-      .attr('fill', 'var(--color-on-surface)')
+      .attr('fill', (d) => colorForGenre(nodeGenre.get(d.id), DEFAULT_NODE_COLOR))
       .attr('fill-opacity', 0.75)
       .attr('pointer-events', 'none');
 
