@@ -7,6 +7,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import type { Artist } from '../lib/lastfm';
 import { getCachedNetworkData } from '../lib/network-cache';
 import { changelog } from '../data/changelog';
+import { GENRE_FAMILIES, genreFamilySlug, type GenreFamily } from '../lib/genre-families';
+
+// Legend entries: the three coloured families, then the uncoloured bucket.
+const legendFamilies: GenreFamily[] = [...GENRE_FAMILIES, 'other'];
 
 const networkChangelog = changelog.filter((e) => e.project === 'network');
 
@@ -271,6 +275,28 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       </label>
     </nav>
 
+    {!hasError && (
+      <ul class="network__legend" aria-label="Genre colour key">
+        {legendFamilies.map((family) => (
+          <li>
+            <button
+              type="button"
+              class="network__legend-item"
+              data-genre-family={genreFamilySlug(family)}
+              aria-pressed="false"
+            >
+              <span
+                class={`network__legend-swatch network__legend-swatch--${genreFamilySlug(family)}`}
+                aria-hidden="true"
+              />
+              <span class="network__legend-label">{family}</span>
+              <span class="network__legend-count" data-genre-family={genreFamilySlug(family)} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    )}
+
     {hasError ? (
       <p class="network__error">Network unavailable — check back soon.</p>
     ) : (
@@ -330,6 +356,129 @@ const staleAgeText = formatRelativeAge(fetchedAt);
   .network {
     padding-top: var(--space-2xl);
     padding-bottom: var(--space-xl);
+
+    /* STC-339 genre palette. Declared here rather than in global.css because
+       nothing else on the site colours by genre, and set on .network (not the
+       canvas) so the legend swatches and the D3-built SVG nodes inherit the
+       same values.
+
+       Eight hues, searched rather than borrowed. A force layout can put any two
+       nodes next to each other, which is the strict "all-pairs" case for a
+       categorical palette -- far harder than the "adjacent-pairs" case a stock
+       palette is tuned for. The data-viz reference palette's eight scored a
+       worst all-pairs normal-vision dE of 7.1 and CVD 3.2 against this page's
+       surfaces, both hard failures. These eight were found by searching OKLCH
+       for the set maximising worst-case all-pairs separation inside each mode's
+       lightness band, and score, against #f8f8f8 / #18181C:
+
+         light  normal dE 14.4  |  CVD dE 7.6  |  lightness + chroma PASS
+         dark   normal dE 13.3  |  CVD dE 6.4  |  lightness + chroma + 3:1 PASS
+
+       Roughly double the separation of the stock eight, and CVD moves from a
+       hard failure into the 6-8 band, which is permitted with secondary
+       encoding. Both modes still land just under the 15.0 normal-vision floor:
+       eight hues cannot clear it in dark mode, whose lightness band (0.48-0.67)
+       is barely half of light's (0.43-0.77), so eight colours must separate by
+       hue alone there and the OKLCH hue circle is not big enough at achievable
+       chroma. Three hues clear every floor outright; eight is a deliberate
+       trade of strict separation for granularity.
+
+       What carries identity when two hues are close: every node is labelled
+       with its artist name, and the legend is interactive -- clicking a family
+       isolates it, so any "which family is this?" question is answerable
+       without discriminating hues by eye. That is also the relief the checker
+       requires for the light-mode contrast warning (three slots sit under 3:1
+       on the light surface).
+
+       Dark values are the same eight hue angles re-stepped for the dark
+       surface, not an automatic flip, so a family keeps its identity across
+       themes. Slot order is fixed and matches GENRE_FAMILIES: colour follows
+       the family, never its node count. See src/lib/genre-families.ts. */
+    --genre-electronic: #26ccd1;
+    --genre-rock: #a9525f;
+    --genre-metal: #737000;
+    --genre-punk: #504cef;
+    --genre-indie: #6e3673;
+    --genre-hip-hop: #d7861e;
+    --genre-soul-funk: #48a16e;
+    --genre-jazz-blues: #007baa;
+    --genre-other: var(--color-on-surface);
+  }
+  :root[data-theme="dark"] .network {
+    --genre-electronic: #03999d;
+    --genre-rock: #c1405a;
+    --genre-metal: #969442;
+    --genre-punk: #4f52db;
+    --genre-indie: #c056ca;
+    --genre-hip-hop: #955903;
+    --genre-soul-funk: #227549;
+    --genre-jazz-blues: #006c96;
+  }
+
+  .network__legend li {
+    display: contents;
+  }
+  .network__legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs) var(--space-md);
+    list-style: none;
+    margin: 0 0 var(--space-md);
+    padding: 0;
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+  .network__legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    /* Reset the UA button box -- this reads as a label, not a control, until
+       hovered or pressed. */
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    padding: 2px 6px;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  .network__legend-item:hover {
+    border-color: var(--color-border);
+    color: var(--color-on-surface);
+  }
+  .network__legend-item:focus-visible {
+    outline: 2px solid var(--color-on-surface);
+    outline-offset: 1px;
+  }
+  .network__legend-item[aria-pressed='true'] {
+    border-color: var(--color-on-surface);
+    color: var(--color-on-surface);
+  }
+  .network__legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    /* Identity is never colour-alone: the swatch sits beside a text label. */
+    background-color: var(--genre-other);
+    opacity: 0.75; /* matches FULL_NODE_OPACITY on the nodes themselves */
+  }
+  .network__legend-swatch--electronic { background-color: var(--genre-electronic); }
+  .network__legend-swatch--rock { background-color: var(--genre-rock); }
+  .network__legend-swatch--metal { background-color: var(--genre-metal); }
+  .network__legend-swatch--punk { background-color: var(--genre-punk); }
+  .network__legend-swatch--indie { background-color: var(--genre-indie); }
+  .network__legend-swatch--hip-hop { background-color: var(--genre-hip-hop); }
+  .network__legend-swatch--soul-funk { background-color: var(--genre-soul-funk); }
+  .network__legend-swatch--jazz-blues { background-color: var(--genre-jazz-blues); }
+  .network__legend-count {
+    color: var(--color-on-surface-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .network__legend-count:empty {
+    display: none;
   }
   .network__heading {
     font-family: var(--font-display);
@@ -555,6 +704,12 @@ const staleAgeText = formatRelativeAge(fetchedAt);
 <script>
   import * as d3 from 'd3';
   import { assignGenres } from '../lib/network-genre';
+  import {
+    genreFamilyForTags,
+    genreFamilySlug,
+    GENRE_FAMILIES,
+    type GenreFamily,
+  } from '../lib/genre-families';
 
   function initNetwork() {
     const scriptTag = document.getElementById('graph-data');
@@ -659,6 +814,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       fullscreen: false,
       searchTerm: '',
       selectedTag: '',
+      selectedFamily: '',
       similarityThreshold: 0,
     };
 
@@ -684,7 +840,71 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       nodeTagsRaw
     );
 
+    // Colour family per node (STC-339). nodeGenre above is the artist's own
+    // top tag, which is what the genre poles cluster on; the family is the
+    // broader bucket that tag rolls up into, and is what carries colour.
+    // Eight families plus an uncoloured 'other' -- see src/lib/genre-families.ts.
+    const nodeFamily = new Map<string, GenreFamily>();
+    nodes.forEach((n) => nodeFamily.set(n.id, genreFamilyForTags(nodeTagsRaw[n.id] ?? [])));
+
+    const familyFill = (id: string) =>
+      `var(--genre-${genreFamilySlug(nodeFamily.get(id) ?? 'other')})`;
+
+    // Fill in the legend's per-family node counts. The labels and swatches are
+    // server-rendered, so the legend is already readable if this never runs.
+    const familyCounts = new Map<string, number>();
+    nodeFamily.forEach((family) => {
+      const slug = genreFamilySlug(family);
+      familyCounts.set(slug, (familyCounts.get(slug) ?? 0) + 1);
+    });
+    document.querySelectorAll<HTMLElement>('.network__legend-count').forEach((el) => {
+      const slug = el.dataset.genreFamily;
+      if (slug) el.textContent = String(familyCounts.get(slug) ?? 0);
+    });
+
+    // --- Interactive legend (STC-339) ---
+    // Clicking a family isolates it; clicking the pressed one clears. One
+    // family at a time, so the key doubles as a way to answer "which nodes are
+    // these?" without relying on telling two hues apart by eye.
+    const legendButtons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.network__legend-item')
+    );
+    legendButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const slug = btn.dataset.genreFamily ?? '';
+        state.selectedFamily = state.selectedFamily === slug ? '' : slug;
+        legendButtons.forEach((b) => {
+          b.setAttribute(
+            'aria-pressed',
+            String(b.dataset.genreFamily === state.selectedFamily && state.selectedFamily !== '')
+          );
+        });
+        applyFilters();
+      });
+    });
+
     // --- Genre nodes and links ---
+    // Cap the number of poles. The own-top-tag genres assignGenres returns are
+    // far more granular than the edge-derived ones they replaced, so an
+    // uncapped list rings the canvas with dozens of single-member poles; the
+    // long tail clusters under 'other' instead.
+    const MAX_GENRE_POLES = 12;
+    const genreCounts = new Map<string, number>();
+    nodeGenre.forEach((genre) => genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1));
+    const topGenres = new Set(
+      Array.from(genreCounts.entries())
+        .filter(([genre]) => genre !== 'other')
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, MAX_GENRE_POLES)
+        .map(([genre]) => genre)
+    );
+    nodeGenre.forEach((genre, id) => {
+      if (!topGenres.has(genre)) nodeGenre.set(id, 'other');
+    });
+    nodeGenre2.forEach((genre, id) => {
+      if (!topGenres.has(genre)) nodeGenre2.delete(id);
+    });
+
     const genres = Array.from(new Set(nodeGenre.values()));
     const poleRadius = Math.min(width, height) * 0.35;
     const cx = width / 2;
@@ -834,7 +1054,8 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       .data(nodes as NodeDatum[])
       .join('circle')
       .attr('r', (d) => radiusScale(d.playcount))
-      .attr('fill', 'var(--color-on-surface)')
+      .attr('fill', (d) => familyFill(d.id))
+      // Matches FULL_NODE_OPACITY, which applyFilters resets to on first run.
       .attr('fill-opacity', 0.75)
       .attr('pointer-events', 'none');
 
@@ -910,7 +1131,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     const FULL_EDGE_OPACITY = 0.50;
 
     function applyFilters() {
-      const { searchTerm, selectedTag, similarityThreshold } = state;
+      const { searchTerm, selectedTag, selectedFamily, similarityThreshold } = state;
 
       // 1. Compute which links are below the similarity threshold
       const hiddenLinkIndices = new Set<number>();
@@ -943,9 +1164,13 @@ const staleAgeText = formatRelativeAge(fetchedAt);
           || n.name.toLowerCase().includes(searchTerm.toLowerCase());
         const tagMatch = selectedTag === ''
           || (nodeTagSet.get(n.id) ?? new Set()).has(selectedTag);
+        // Legend filter (STC-339). Intersects with the others, same as search
+        // and the tag dropdown already do (SEARCH-04).
+        const familyMatch = selectedFamily === ''
+          || genreFamilySlug(nodeFamily.get(n.id) ?? 'other') === selectedFamily;
         const thresholdMatch = similarityThreshold === 0
           || connectedNodeIds.has(n.id);
-        if (!nameMatch || !tagMatch || !thresholdMatch) {
+        if (!nameMatch || !tagMatch || !familyMatch || !thresholdMatch) {
           ghostedNodes.add(n.id);
         }
       });
