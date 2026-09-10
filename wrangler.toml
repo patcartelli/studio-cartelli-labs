@@ -28,7 +28,11 @@ zone_name = "studiocartelli.com"
 enabled = true
 
 [triggers]
-crons = ["*/5 * * * *"]
+# */5: the main warm sweep (fullchart albums/artists/tracks + network, see
+# runCronWarms). * * * * *: a network-only "fast lane" (STC-332 follow-up,
+# see worker.ts) so a cold start across all 5 NETWORK_WARM_PERIODS doesn't
+# take hours to converge.
+crons = ["*/5 * * * *", "* * * * *"]
 
 [vars]
 LASTFM_USERNAME = "patcartelli"
