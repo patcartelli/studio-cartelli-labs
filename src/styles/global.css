@@ -443,3 +443,43 @@ h1, h2, h3, h4, h5, h6,
     transition: none;
   }
 }
+
+/* ============================================================
+   TEXT-REVEAL OVERLAY
+   Cursor-anchored floating preview image, attached by
+   src/scripts/text-reveal-engine.ts to any container of `.text-row`
+   elements carrying a `data-image` URL (chart's Weekly lists, the
+   /lab index list view). Global because the same engine instance
+   is shared across pages rather than duplicated per page.
+   ============================================================ */
+
+.text-reveal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 320px;
+  height: 320px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(0, 0);
+  transition: opacity 120ms ease;
+  z-index: 100;
+  will-change: transform, opacity;
+  object-fit: cover;
+}
+
+.text-reveal-overlay[data-visible="true"] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .text-reveal-overlay {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-reveal-overlay {
+    transition: none !important;
+  }
+}

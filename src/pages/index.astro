@@ -3,6 +3,13 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import LabCard from '../components/lab/LabCard.astro';
 import { labEntries } from '../data/lab-entries.ts';
+import { latestChangelogDate } from '../data/changelog.ts';
+
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[Number(m) - 1]} ${Number(d)}, ${y}`;
+}
 ---
 
 <BaseLayout title="Lab" description="Design experiments and data visualizations from Studio Cartelli." ogTitle="Lab">
@@ -11,6 +18,15 @@ import { labEntries } from '../data/lab-entries.ts';
     <p class="experiments__intro">
       A home for small, self-contained side projects.
     </p>
+
+    <div class="experiments__controls">
+      <label class="experiments__toggle">
+        <input type="checkbox" class="experiments__toggle-input" id="experiments-list-toggle" />
+        <span class="experiments__toggle-pill" aria-hidden="true"></span>
+        <span class="experiments__toggle-label">list view</span>
+      </label>
+    </div>
+
     <ul class="experiments__grid" role="list">
       {labEntries.map((item, index) => (
         <li class="experiments__item">
@@ -18,8 +34,53 @@ import { labEntries } from '../data/lab-entries.ts';
         </li>
       ))}
     </ul>
+
+    <section class="experiments__list-section" style="display:none">
+      <ol class="text-list" role="list">
+        {labEntries.map((item) => {
+          const date = latestChangelogDate(item.slug);
+          return (
+            <li class="text-row" data-image={item.thumbnail ?? ''}>
+              <a class="text-row__link" href={item.href}>
+                <span class="text-row__name">{item.title}</span>
+                {date && <span class="text-row__date">Updated {formatDate(date)}</span>}
+              </a>
+              {item.thumbnail && (
+                <img class="text-row__thumb" src={item.thumbnail} alt="" width="48" height="48" loading="lazy" decoding="async" />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   </section>
 </BaseLayout>
+
+<script>
+  import { initTextRevealEngine } from '../scripts/text-reveal-engine';
+
+  const STORAGE_KEY = 'lab-index-view';
+  const toggleInput = document.querySelector<HTMLInputElement>('#experiments-list-toggle');
+  const grid = document.querySelector<HTMLElement>('.experiments__grid');
+  const list = document.querySelector<HTMLElement>('.experiments__list-section');
+
+  function applyView(view: 'grid' | 'list'): void {
+    if (grid) grid.style.display = view === 'list' ? 'none' : '';
+    if (list) list.style.display = view === 'list' ? '' : 'none';
+    if (toggleInput) toggleInput.checked = view === 'list';
+  }
+
+  const stored = localStorage.getItem(STORAGE_KEY);
+  applyView(stored === 'list' ? 'list' : 'grid');
+
+  toggleInput?.addEventListener('change', () => {
+    const view = toggleInput.checked ? 'list' : 'grid';
+    applyView(view);
+    localStorage.setItem(STORAGE_KEY, view);
+  });
+
+  initTextRevealEngine('.experiments__list-section');
+</script>
 
 <style>
   .experiments {
@@ -44,6 +105,71 @@ import { labEntries } from '../data/lab-entries.ts';
     max-width: 640px;
   }
 
+  /* ---- Grid/list toggle ---- */
+  .experiments__controls {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--space-sm);
+  }
+
+  .experiments__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .experiments__toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .experiments__toggle-pill {
+    width: 32px;
+    height: 18px;
+    background: var(--color-border);
+    border-radius: 99px;
+    position: relative;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+
+  .experiments__toggle-pill::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 12px;
+    height: 12px;
+    background: var(--color-on-surface);
+    border-radius: 50%;
+    transition: transform 0.15s;
+  }
+
+  .experiments__toggle-input:checked ~ .experiments__toggle-pill {
+    background: var(--color-on-surface);
+  }
+
+  .experiments__toggle-input:checked ~ .experiments__toggle-pill::after {
+    transform: translateX(14px);
+  }
+
+  .experiments__toggle-label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .experiments__toggle-pill,
+    .experiments__toggle-pill::after {
+      transition: none;
+    }
+  }
+
   .experiments__grid {
     list-style: none;
     display: grid;
@@ -64,6 +190,92 @@ import { labEntries } from '../data/lab-entries.ts';
   @media (min-width: 840px) {
     .experiments__grid {
       grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  /* ---- List view ---- */
+  .text-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .text-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-sm) 0;
+    border-bottom: 1px solid transparent;
+    transition: border-color 120ms ease;
+  }
+
+  .text-row + .text-row {
+    border-top: 1px solid var(--color-border);
+  }
+
+  /* Hairline rule below the active row (transparent border at rest so layout doesn't shift) */
+  .text-row[data-active="true"] {
+    border-bottom-color: var(--color-on-surface-muted);
+  }
+
+  .text-row__link {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-md);
+    flex: 1 1 auto;
+    min-width: 0;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .text-row__link:focus-visible {
+    outline: 2px solid var(--color-on-surface);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+
+  .text-row__name {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: var(--text-title-medium);
+    color: var(--color-on-surface);
+    transition: color 120ms ease;
+  }
+
+  .text-row__date {
+    font-family: var(--font-mono);
+    font-size: var(--text-body-small);
+    color: var(--color-on-surface-muted);
+    flex-shrink: 0;
+    transition: color 120ms ease;
+  }
+
+  .text-row[data-active="true"] .text-row__date {
+    color: var(--color-on-surface-dimmed);
+  }
+
+  /* Inline thumb — hidden on hover-capable (desktop), shown on touch */
+  .text-row__thumb {
+    display: none;
+    object-fit: cover;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  @media (hover: none) {
+    .text-row__thumb {
+      display: inline-block;
+      width: 48px;
+      height: 48px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .text-row,
+    .text-row__name,
+    .text-row__date {
+      transition: none;
     }
   }
 </style>
