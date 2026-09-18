@@ -53,8 +53,17 @@ Ships as a Cloudflare Worker, not Cloudflare Pages:
 wrangler kv namespace create LASTFM_CHART_CACHE   # once, then paste the id into wrangler.toml
 wrangler secret put LASTFM_API_KEY
 wrangler secret put TADB_API_KEY
-wrangler deploy
+npm run deploy
 ```
+
+**Use `npm run deploy`, not `wrangler deploy` on its own.** `wrangler deploy` does
+not build. The Astro adapter writes `dist/server/`, and `.wrangler/deploy/config.json`
+points wrangler at the generated `dist/server/wrangler.json`, so a bare `wrangler deploy`
+uploads whatever happens to be sitting in `dist/` — silently shipping a stale bundle no
+matter what your checkout says. That is not hypothetical: on 2026-09-10 three consecutive
+`wrangler deploy` runs shipped nothing, and because the stale `dist/server/wrangler.json`
+predated the second cron trigger, Cloudflare also kept registering only one schedule
+(STC-366). `npm run deploy` chains the build so this cannot happen.
 
 In production this Worker is routed at `studiocartelli.com/lab/*` via a Cloudflare Workers Route on the same zone as the main (private) `studio-cartelli` site — see that repo's deployment docs for the route configuration.
 
