@@ -143,3 +143,11 @@ export const changelog: ChangelogEntry[] = [
     ],
   },
 ];
+
+/** Most recent changelog date for a project (dates sort lexicographically as stored). */
+export function latestChangelogDate(project: string): string | undefined {
+  return changelog
+    .filter((entry) => entry.project === project)
+    .map((entry) => entry.date)
+    .reduce((latest, date) => (!latest || date > latest ? date : latest), undefined as string | undefined);
+}

@@ -4,7 +4,9 @@ import AxeBuilder from '@axe-core/playwright';
 test('experiments landing page has heading and chart link', async ({ page }) => {
   await page.goto('/lab');
   await expect(page.locator('.experiments__heading')).toBeVisible();
-  await expect(page.locator('a[href="/lab/chart"]')).toBeVisible();
+  // STC-423: the list view also links to /lab/chart (hidden by default), so
+  // scope to the grid card specifically rather than any matching href.
+  await expect(page.locator('a.lab-card[href="/lab/chart"]')).toBeVisible();
 });
 
 test('experiments/chart page renders either success or error state', async ({ page }) => {
