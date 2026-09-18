@@ -214,7 +214,7 @@ test('chart changelog shows entries when opened', async ({ page }) => {
   await page.goto('/lab/chart');
   await page.locator('.chart__changelog-summary').click();
   const entries = page.locator('.chart__changelog-entry');
-  await expect(entries).toHaveCount(7);
+  await expect(entries).toHaveCount(9);
   await expect(page.locator('.chart__changelog-label').first()).toBeVisible();
 });
 

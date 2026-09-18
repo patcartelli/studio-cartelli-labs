@@ -15,6 +15,30 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    project: 'network',
+    date: '2026-09-10',
+    items: [
+      { label: 'feature',     text: 'Genre colour coding — nodes tinted by genre family (electronic, rock, metal, punk, indie, hip-hop, soul & funk, jazz & blues), with a clickable legend to isolate one' },
+      { label: 'bugfix',      text: "Genre poles now derive from each artist's own tags instead of shared edge tags — well-tagged artists no longer land in 'other'" },
+      { label: 'feature',     text: 'Influence chronology — hover a node to see its formation year alongside its name' },
+      { label: 'improvement', text: "Influence edge tooltips combine direction and shared tag in one line (e.g. 'Pink Floyd → Radiohead, via rock')" },
+    ],
+  },
+  {
+    project: 'chart',
+    date: '2026-08-10',
+    items: [
+      { label: 'bugfix', text: "Resolved missing cover art after Last.fm's CDN changed hosts, and stopped one broken image from breaking the whole copy-chart feature" },
+    ],
+  },
+  {
+    project: 'chart',
+    date: '2026-07-24',
+    items: [
+      { label: 'improvement', text: 'Cover art transfer weight cut roughly a third — smaller Last.fm thumbnail variants, artist photos deferred until the Artists tab opens, inline hover thumbs skipped on desktop' },
+    ],
+  },
+  {
     project: 'life',
     date: '2026-07-15',
     items: [
