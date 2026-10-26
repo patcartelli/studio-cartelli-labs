@@ -1,0 +1,630 @@
+---
+// src/pages/lab/frame-diff-wgsl.astro
+// STC-320 — Lab study two: the frame-difference kernel ported to WGSL /
+// WebGPU. Fully client-side; no API, no KV. Unlisted and noindex, matching
+// study one (/lab/frame-diff) — neither is in labEntries yet, because
+// neither has the real footage STC-319's rules list needs.
+//
+// The cross-check table below is live: it runs the fixtures through every
+// implementation the visitor's browser can provide and reports what agreed.
+// It is deliberately on the page rather than only in the test suite —
+// "the same fixture produces the same change grid in both studies" is this
+// ticket's own done-condition, and a claim a reader can watch execute is
+// worth more than one they have to take on trust.
+export const prerender = true;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Frame difference — WGSL"
+  description="Porting a WebGL2 frame-difference kernel to WGSL and WebGPU, and turning the change grid from a raster into a compute-shader reduction."
+  ogTitle="Frame difference, WGSL — lab study"
+  noindex={true}
+>
+  <section class="fdw container">
+    <p class="fdw__overline">Study two &bull; WGSL frame difference</p>
+    <h1 class="fdw__heading">The same kernel, in WGSL.</h1>
+    <p class="fdw__intro">
+      <a href="/lab/frame-diff">Study one</a> wrote a frame-difference kernel in GLSL: two video
+      frames in, a mask of what changed out, plus one number per frame for the plot. The recorder's
+      compositor is locked to WGSL, so this is the version that ships &mdash; and porting code you
+      wrote a week ago is a good way to find out what you actually decided, as opposed to what the
+      language decided for you.
+    </p>
+    <p class="fdw__intro">
+      One thing came back. Study one's per-frame number was never the fraction of the frame that
+      changed; it was a <strong>point sample of a fixed 64&times;36 lattice</strong>, which on a
+      640&times;360 clip reads one pixel in a hundred. A text caret is two pixels wide. Below,
+      measured rather than argued: study one's estimator sees a blinking caret in
+      <strong>2 of the 10 positions</strong> it can occupy, and which two is a property of the
+      lattice rather than of the recording.
+    </p>
+
+    <h2 class="fdw__h2">Cross-check</h2>
+    <p class="fdw__body">
+      Every implementation this browser can run, over the same fixtures. The rule itself lives in
+      one place (<code>frame-diff-rule.ts</code>, plain TypeScript, no GPU) and both shaders are
+      ports of <em>that</em> rather than of each other &mdash; so when two disagree, the one that
+      disagrees with the reference is the one that is wrong. Fixtures marked with an expected value
+      are correct by construction, which is what stops three ports of one mistake certifying each
+      other.
+    </p>
+    <p class="fdw__body fdw__body--tight">
+      <strong>There are two reference columns because there are two rules.</strong> Study one point
+      samples and study two reduces, so each shader is held to the model it actually implements:
+      GLSL against <em>point sample</em>, WGSL against <em>reduction</em>. Those two columns
+      differing is the finding, not a fault &mdash; compare each shader with the reference column
+      directly to its left.
+    </p>
+
+    <div class="fdw__impls" id="fdw-impls"></div>
+    <div class="fdw__table-wrap">
+      <table class="fdw__table" id="fdw-table">
+        <caption class="visually-hidden">
+          Change-rule cross-check: each fixture's changed-pixel fraction under every available
+          implementation.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Fixture</th>
+            <th scope="col">Expected</th>
+            <th scope="col">Reference<br /><span class="fdw__th-sub">reduction</span></th>
+            <th scope="col">Reference<br /><span class="fdw__th-sub">point sample</span></th>
+            <th scope="col">GLSL<br /><span class="fdw__th-sub">study one</span></th>
+            <th scope="col">WGSL<br /><span class="fdw__th-sub">study two</span></th>
+            <th scope="col">Result</th>
+          </tr>
+        </thead>
+        <tbody id="fdw-tbody">
+          <tr><td colspan="7">Running…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="fdw__verdict" id="fdw-verdict" aria-live="polite"></p>
+
+    <h2 class="fdw__h2">The caret sweep</h2>
+    <p class="fdw__body">
+      A 2&times;16 caret blinks on against a light field, at each of the ten horizontal positions
+      that cover one period of the sampling lattice. The reduction counts the same 32 pixels every
+      time. The estimator's answer depends on where the caret landed.
+    </p>
+    <p class="fdw__sweep" id="fdw-sweep">Running…</p>
+    <p class="fdw__body fdw__body--tight">
+      This matters more than a factor-of-six error bar would suggest, because a caret is not an
+      edge case &mdash; it is study one's own example of the change a viewer <em>should</em> be
+      looking at, and the case that motivates keying auto-zoom off frame difference instead of the
+      cursor in the first place. An estimator that misses it 80% of the time is not a noisy version
+      of the right answer; on the signal that matters most it is a coin toss.
+    </p>
+
+    <h2 class="fdw__h2">What changed in the port</h2>
+    <ol class="fdw__notes">
+      <li>
+        <strong>The grid became a reduction.</strong> Study one gets its number by rendering the
+        diff into a 64&times;36 framebuffer and reading it back &mdash; with nearest filtering,
+        each output texel is one source pixel, so the result is an estimator, not a total. A
+        compute shader has no such constraint: one workgroup per grid cell, every pixel of that
+        cell's tile visited exactly once, an atomic counter per cell. The two therefore produce
+        <em>different numbers by design</em>, and the table above holds each to the model it
+        actually implements rather than pretending they should match.
+      </li>
+      <li>
+        <strong><code>textureLoad</code>, not <code>textureSample</code>.</strong> A sampler brings
+        filtering and wrap modes with it, and a reduction wants exact texel fetches. Dropping the
+        sampler also drops study one's <code>UNPACK_FLIP_Y_WEBGL</code> from the compute path
+        entirely &mdash; the flip survives only in the eye-view pass, which really is a raster.
+      </li>
+      <li>
+        <strong>Acquisition is asynchronous, so the constructor had to go.</strong>
+        <code>getContext('webgl2')</code> returns a context or null on the spot;
+        <code>requestAdapter</code> and <code>requestDevice</code> are promises. The class is built
+        through a static <code>create()</code>, and readback is <code>mapAsync</code> against study
+        one's synchronous <code>readPixels</code>. Two API shape changes, both forced by the
+        platform rather than chosen.
+      </li>
+      <li>
+        <strong>Errors arrive on a side channel.</strong> A GLSL compile failure is one synchronous
+        call away at the point of the mistake. WGSL validation surfaces through
+        <code>popErrorScope</code>, asynchronously, and an unhandled one is a blank canvas that
+        looks like a rendering bug. <code>create()</code> wraps module creation in an error scope
+        and refuses rather than returning a half-built renderer.
+      </li>
+      <li>
+        <strong>Float width is part of the rule, which the port is what surfaced.</strong> The
+        reference was written in float64 and the shaders run in float32. A fixture engineered to
+        sit exactly on the threshold lands 5.6e&minus;17 <em>below</em> it in float64 and exactly
+        <em>on</em> it in float32, because the Rec.601 weights sum to 0.99999999999999989 rather
+        than 1 &mdash; so the reference disagreed with both shaders over arithmetic rather than
+        over the rule. The reference rounds to float32 now. Exact-boundary behaviour is a
+        documented convention between the three ports, not a checked one: no portable fixture can
+        pin it.
+      </li>
+    </ol>
+
+    <h2 class="fdw__h2">Live footage</h2>
+    <p class="fdw__body">
+      The same take study one plays, through the WGSL kernel. It needs both WebGPU and an H.264
+      decoder, and says which one is missing rather than showing an empty canvas.
+    </p>
+    <div class="fdw__frame">
+      <canvas
+        class="fdw__canvas"
+        id="fdw-canvas"
+        role="img"
+        aria-label="Frame-difference mask computed in WGSL: the current frame dimmed, with pixels that changed since the previous frame highlighted in red."
+      ></canvas>
+    </div>
+    <div class="fdw__controls">
+      <button type="button" id="fdw-play" class="pill-button pill-button--outlined" aria-pressed="false" disabled>
+        Play
+      </button>
+      <button type="button" id="fdw-step" class="pill-button pill-button--outlined" disabled>Step &rarr;</button>
+      <label class="fdw__threshold">
+        Threshold
+        <input type="range" id="fdw-threshold" min="0.01" max="0.5" step="0.01" value="0.08" />
+        <span id="fdw-threshold-value">0.08</span>
+      </label>
+      <span class="fdw__frame-index" id="fdw-frame-index">not loaded</span>
+    </div>
+    <p class="fdw__note" id="fdw-live-note"></p>
+
+    <h2 class="fdw__h2">What this study does not settle</h2>
+    <p class="fdw__body">
+      The port is verified against the reference wherever a browser could run it; the
+      implementation panel above says which legs actually executed here, and a leg that did not run
+      is never counted as agreeing. What none of it establishes is
+      <strong>which change is the change</strong> &mdash; the temporal rule separating a caret from
+      a spinner from a live chart tick. That is
+      <a href="/lab/frame-diff">study one's</a> deliverable, it needs 30&ndash;60 seconds of real
+      footage that does not exist yet, and it remains unwritten. What this study adds to it is a
+      correction worth having first: on the signal that rule is most about, the measurement study
+      one was going to be read off was structurally unable to see it.
+    </p>
+  </section>
+</BaseLayout>
+
+<style>
+  .fdw {
+    padding-top: var(--space-2xl);
+    padding-bottom: var(--space-xl);
+  }
+
+  .fdw__overline {
+    font-family: var(--font-mono);
+    font-size: var(--text-body-small);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-on-surface-muted);
+    margin-bottom: var(--space-xs);
+  }
+
+  .fdw__heading {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-display-large);
+    line-height: var(--lh-display-large);
+    margin-bottom: var(--space-md);
+  }
+
+  .fdw__h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-headline-medium);
+    margin-top: var(--space-xl);
+    margin-bottom: var(--space-sm);
+  }
+
+  .fdw__intro,
+  .fdw__body {
+    font-family: var(--font-body);
+    font-size: var(--text-body-large);
+    line-height: var(--lh-body-large);
+    color: var(--color-on-surface-dimmed);
+    margin-bottom: var(--space-md);
+    max-width: var(--measure-prose);
+  }
+
+  .fdw__body--tight {
+    font-size: var(--text-body-medium);
+  }
+
+  .fdw__impls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-md);
+  }
+
+  .fdw__impl {
+    font-family: var(--font-mono);
+    font-size: var(--text-body-small);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 0.25rem 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .fdw__impl--ok {
+    border-color: currentColor;
+  }
+
+  .fdw__impl--off {
+    color: var(--color-on-surface-muted);
+    opacity: 0.85;
+  }
+
+  .fdw__table-wrap {
+    overflow-x: auto;
+    margin-bottom: var(--space-sm);
+  }
+
+  .fdw__table {
+    border-collapse: collapse;
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: var(--text-body-small);
+  }
+
+  .fdw__table th,
+  .fdw__table td {
+    text-align: right;
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+  }
+
+  .fdw__table th:first-child,
+  .fdw__table td:first-child {
+    text-align: left;
+  }
+
+  .fdw__th-sub {
+    font-weight: 400;
+    color: var(--color-on-surface-muted);
+  }
+
+  .fdw__cell--off {
+    color: var(--color-on-surface-muted);
+  }
+
+  .fdw__cell--bad {
+    font-weight: 700;
+  }
+
+  .fdw__cell--detail {
+    text-align: left;
+    white-space: normal;
+    color: var(--color-on-surface-dimmed);
+    background: var(--color-surface-subtle);
+  }
+
+  .fdw__verdict,
+  .fdw__sweep,
+  .fdw__note {
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    line-height: var(--lh-body-large);
+    color: var(--color-on-surface-dimmed);
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: var(--space-sm) var(--space-md);
+    margin-bottom: var(--space-md);
+    max-width: var(--measure-prose);
+  }
+
+  .fdw__notes {
+    max-width: var(--measure-prose);
+    font-family: var(--font-body);
+    font-size: var(--text-body-large);
+    line-height: var(--lh-body-large);
+    color: var(--color-on-surface-dimmed);
+    padding-left: 1.25rem;
+    margin-bottom: var(--space-md);
+  }
+
+  .fdw__notes li {
+    margin-bottom: var(--space-sm);
+  }
+
+  .fdw__frame {
+    height: clamp(240px, 45vh, 420px);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: clip;
+    margin-bottom: var(--space-sm);
+    background: var(--color-surface-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .fdw__canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .fdw__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+  }
+
+  .fdw__threshold,
+  .fdw__frame-index {
+    font-family: var(--font-mono);
+    font-size: var(--text-body-small);
+    color: var(--color-on-surface-dimmed);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 640px) {
+    .fdw__table {
+      font-size: 0.75rem;
+    }
+  }
+</style>
+
+<script>
+  import { runCrossCheck, type CrossCheckReport } from '../lib/frame-diff-crosscheck.ts';
+  import { FrameDiffGpuRenderer, checkGpuSupport } from '../lib/frame-diff-gpu.ts';
+  import { loadSession, type LoadedSession } from '../lib/session/session.ts';
+  import { decodeAll } from '../lib/session/decode.ts';
+  import type { Anchors, SessionEvent } from '../lib/session/types.ts';
+
+  // Study one's assets. Deliberately the same take, so "the same fixture
+  // produces the same change grid in both studies" is about one recording.
+  const ASSET_BASE = '/lab/study/frame-diff';
+
+  function fmt(v: number | null): string {
+    if (v === null) return '—';
+    if (v === 0) return '0';
+    if (v < 1e-4) return v.toExponential(2);
+    return v.toFixed(6);
+  }
+
+  function initFrameDiffWgsl() {
+    const tableMaybe = document.getElementById('fdw-tbody');
+    if (!tableMaybe || tableMaybe.dataset.fdwInit === 'true') return;
+    tableMaybe.dataset.fdwInit = 'true';
+    // Bound to a non-null const before any closure captures it: TypeScript
+    // cannot keep a narrowing across the async callbacks below, and the
+    // alternative is a `!` at every use site.
+    const table: HTMLElement = tableMaybe;
+
+    const implsEl = document.getElementById('fdw-impls')!;
+    const verdictEl = document.getElementById('fdw-verdict')!;
+    const sweepEl = document.getElementById('fdw-sweep')!;
+    const liveNoteEl = document.getElementById('fdw-live-note')!;
+    const canvas = document.getElementById('fdw-canvas') as HTMLCanvasElement;
+    const playBtn = document.getElementById('fdw-play') as HTMLButtonElement;
+    const stepBtn = document.getElementById('fdw-step') as HTMLButtonElement;
+    const thresholdInput = document.getElementById('fdw-threshold') as HTMLInputElement;
+    const thresholdValue = document.getElementById('fdw-threshold-value')!;
+    const frameIndexEl = document.getElementById('fdw-frame-index')!;
+
+    // ---- Cross-check -----------------------------------------------------
+    async function crossCheck() {
+      let report: CrossCheckReport;
+      try {
+        report = await runCrossCheck();
+      } catch (e) {
+        table.innerHTML = '';
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 7;
+        td.textContent = `Cross-check failed: ${e instanceof Error ? e.message : String(e)}`;
+        tr.appendChild(td);
+        table.appendChild(tr);
+        return;
+      }
+
+      // The REASON an implementation could not run goes on the page, not in a
+      // title attribute. A tooltip is unreachable on a touch device and
+      // invisible to anyone reading rather than hovering — and this reason is
+      // the single most useful sentence on the page when a column is empty.
+      implsEl.innerHTML = '';
+      for (const impl of report.implementations) {
+        const span = document.createElement('span');
+        span.className = `fdw__impl ${impl.available ? 'fdw__impl--ok' : 'fdw__impl--off'}`;
+        span.textContent = impl.available
+          ? `\u2713 ${impl.label}`
+          : `\u2717 ${impl.label}${impl.reason ? ` \u2014 ${impl.reason}` : ''}`;
+        implsEl.appendChild(span);
+      }
+
+      table.innerHTML = '';
+      for (const row of report.rows) {
+        const tr = document.createElement('tr');
+        const failed = row.disagreements.length > 0;
+        const cells: Array<{ text: string; off?: boolean; title?: string; bad?: boolean }> = [
+          { text: row.fixture, title: row.purpose },
+          { text: row.expected === null ? '\u2014' : fmt(row.expected), off: row.expected === null },
+          { text: fmt(row.oracle) },
+          { text: fmt(row.oraclePointSample) },
+          { text: fmt(row.glsl), off: row.glsl === null },
+          { text: fmt(row.wgsl), off: row.wgsl === null },
+          {
+            // Names the LEG, so a reader can tell "the port is wrong" from
+            // "the reference is wrong" from "this browser could not run it".
+            text: failed
+              ? row.disagreements.map((d) => d.leg).join(' + ')
+              : row.glsl === null && row.wgsl === null
+                ? 'reference only'
+                : 'ok',
+            bad: failed,
+          },
+        ];
+        for (const c of cells) {
+          const td = document.createElement('td');
+          td.textContent = c.text;
+          if (c.off) td.className = 'fdw__cell--off';
+          if (c.bad) td.className = 'fdw__cell--bad';
+          if (c.title) td.title = c.title;
+          tr.appendChild(td);
+        }
+        table.appendChild(tr);
+
+        // A failing row gets its numbers spelled out underneath, because
+        // "MISMATCH" with no figure is the report this page gave on its first
+        // run against real hardware and it cost a round trip to diagnose.
+        if (failed) {
+          for (const d of row.disagreements) {
+            const detailRow = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 7;
+            td.className = 'fdw__cell--detail';
+            td.textContent = `${row.fixture} \u2014 ${d.detail}`;
+            detailRow.appendChild(td);
+            table.appendChild(detailRow);
+          }
+        }
+      }
+
+      // The verdict names what did NOT run. A cross-check reporting
+      // "everything agreed" while two of three legs never executed is the
+      // "success by finding nothing to do" failure this project keeps
+      // meeting, and it is not going to be introduced here on purpose.
+      const ran = report.implementations.filter((i) => i.available).map((i) => i.label);
+      const missing = report.implementations.filter((i) => !i.available);
+      const parts: string[] = [];
+      if (report.agree) {
+        parts.push('Every implementation that ran agreed.');
+      } else {
+        const legs = [...new Set(report.rows.flatMap((r) => r.disagreements.map((d) => d.leg)))];
+        parts.push(
+          `MISMATCH in: ${legs.join(', ')}` +
+            (report.caretSweep.reductionStable ? '' : ', caret-sweep stability') +
+            '. Each failing row is spelled out under the table.',
+        );
+      }
+      parts.push(`Ran: ${ran.join(', ')}.`);
+      if (missing.length > 0) {
+        parts.push(
+          `Did not run here: ${missing.map((m) => `${m.label} (${m.reason})`).join('; ')} — ` +
+            'those columns are unverified in this browser, not passing.',
+        );
+      }
+      verdictEl.textContent = parts.join(' ');
+
+      const s = report.caretSweep;
+      sweepEl.textContent =
+        `Over ${s.positions} positions: study one's point-sampled estimator registered the caret ` +
+        `in ${s.pointSampleSaw}; study two's reduction counted ${s.reductionPixels} changed pixels ` +
+        `at ${s.reductionStable ? 'every one' : 'SOME BUT NOT ALL — the reduction is sampling'}.`;
+
+      (window as any).__frameDiffWgslTest = { report };
+    }
+
+    // ---- Live footage ----------------------------------------------------
+    let renderer: FrameDiffGpuRenderer | null = null;
+    let bitmaps: ImageBitmap[] = [];
+    let session: LoadedSession | null = null;
+    let index = 1;
+    let running = false;
+    let rafId = 0;
+    let lastStep = 0;
+    const FPS_MS = 1000 / 12;
+
+    function threshold() {
+      return Number(thresholdInput.value);
+    }
+
+    function drawCurrent() {
+      if (!renderer || bitmaps.length < 2) return;
+      renderer.draw(bitmaps[index - 1]!, bitmaps[index]!, threshold());
+      frameIndexEl.textContent = `frame ${index} / ${bitmaps.length - 1}`;
+    }
+
+    function tick(t: number) {
+      rafId = requestAnimationFrame(tick);
+      if (!running) return;
+      if (t - lastStep >= FPS_MS) {
+        lastStep = t;
+        index = index >= bitmaps.length - 1 ? 1 : index + 1;
+        drawCurrent();
+      }
+    }
+
+    async function bootLive() {
+      const support = await checkGpuSupport();
+      if (!support.supported) {
+        liveNoteEl.textContent = `Live view unavailable: ${support.reason} The cross-check above still ran everything else this browser supports.`;
+        return;
+      }
+      try {
+        liveNoteEl.textContent = 'Loading take…';
+        const [anchors, eventsDoc, displayMp4] = await Promise.all([
+          fetch(`${ASSET_BASE}/anchors.json`).then((r) => r.json() as Promise<Anchors>),
+          fetch(`${ASSET_BASE}/events.json`).then(
+            (r) => r.json() as Promise<{ version: number; events: SessionEvent[] }>,
+          ),
+          fetch(`${ASSET_BASE}/display.mp4`).then((r) => r.arrayBuffer()),
+        ]);
+        session = await loadSession({ anchors, events: eventsDoc, displayMp4 });
+        liveNoteEl.textContent = 'Decoding frames…';
+        bitmaps = await decodeAll(session.video);
+        renderer = await FrameDiffGpuRenderer.create(canvas);
+        index = Math.min(1, bitmaps.length - 1);
+        drawCurrent();
+        playBtn.disabled = false;
+        stepBtn.disabled = false;
+        liveNoteEl.textContent = `Loaded ${bitmaps.length} frames through the WGSL kernel.`;
+      } catch (e) {
+        // The overwhelmingly likely failure is H.264 decoding, which several
+        // browsers (and every headless Linux CI runner this project has met)
+        // simply do not have. Say which step failed rather than "failed".
+        liveNoteEl.textContent =
+          `Live view unavailable: ${e instanceof Error ? e.message : String(e)}. ` +
+          'This is usually a missing H.264 decoder rather than a WebGPU problem — the cross-check above is unaffected, since it builds its frames in-page.';
+      }
+    }
+
+    playBtn.addEventListener('click', () => {
+      running = !running;
+      lastStep = 0;
+      playBtn.textContent = running ? 'Pause' : 'Play';
+      playBtn.setAttribute('aria-pressed', String(running));
+    });
+    stepBtn.addEventListener('click', () => {
+      running = false;
+      playBtn.textContent = 'Play';
+      playBtn.setAttribute('aria-pressed', 'false');
+      if (bitmaps.length >= 2) {
+        index = index >= bitmaps.length - 1 ? 1 : index + 1;
+        drawCurrent();
+      }
+    });
+    thresholdInput.addEventListener('input', () => {
+      thresholdValue.textContent = threshold().toFixed(2);
+      drawCurrent();
+    });
+
+    void crossCheck();
+    void bootLive();
+    rafId = requestAnimationFrame(tick);
+
+    document.addEventListener(
+      'astro:before-swap',
+      () => {
+        cancelAnimationFrame(rafId);
+        renderer?.dispose();
+        for (const b of bitmaps) b.close();
+        delete (window as any).__frameDiffWgslTest;
+      },
+      { once: true },
+    );
+  }
+
+  initFrameDiffWgsl();
+  document.addEventListener('astro:page-load', initFrameDiffWgsl);
+</script>

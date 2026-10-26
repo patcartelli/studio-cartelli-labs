@@ -1,0 +1,403 @@
+---
+// src/pages/lab/frame-diff.astro
+// STC-319 — Lab study: frame difference (GLSL). Fully client-side; no API,
+// no KV. Not linked from anywhere yet and not in labEntries — see the
+// caveat note on the page and docs/STC-319-frame-diff-study.md in
+// patcartelli/stc-screen-recorder for why.
+export const prerender = true;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Frame difference"
+  description="A WebGL2 study of frame-to-frame change on real recorder footage — the signal auto-zoom stage 2 will key off."
+  ogTitle="Frame difference — lab study"
+  noindex={true}
+>
+  <section class="fd container">
+    <p class="fd__overline">Study &bull; WebGL2 frame difference</p>
+    <h1 class="fd__heading">Frame difference.</h1>
+    <p class="fd__intro">
+      Every recorder in this category zooms to the cursor. That breaks the moment the cursor isn't
+      what changed — a keyboard-driven grid, a dashboard where three panels update at once. The
+      signal that works instead is the <strong>frame difference</strong>: compare consecutive video
+      frames on the GPU, mask what changed. This page is that mask, live, over a real recorder take
+      — and the sparkline below it is the raw material for the harder question the study exists to
+      answer: which change is <em>the</em> change.
+    </p>
+    <p class="fd__caveat">
+      <strong>Placeholder footage.</strong> The two fixtures this study actually needs — 30&ndash;60s
+      of the live Artist Network graph, and a form-heavy app — are recorded on a Mac (STC-313 /
+      STC-319) and don't exist yet. What's playing below is <code>fixtures/basic</code> from
+      <a href="https://github.com/patcartelli/stc-screen-recorder" target="_blank" rel="noopener">stc-screen-recorder</a>'s
+      own test suite: a deterministic clip (hue background, one moving square) used to prove the
+      recorder's transform is byte-identical across sinks. It has real anchors/events sidecars from
+      the same recorder, so it's enough to prove the shader and the loader work — it is
+      <strong>not</strong> enough to tell a caret blink from a live chart tick, because it has
+      neither. The rules list below is scoped to what this fixture can actually show.
+    </p>
+
+    <div class="fd__frame">
+      <canvas
+        class="fd__canvas"
+        id="fd-canvas"
+        role="img"
+        aria-label="Frame-difference mask: the current frame dimmed, with pixels that changed since the previous frame highlighted in red."
+      ></canvas>
+    </div>
+
+    <div class="fd__controls">
+      <button type="button" id="fd-play" class="pill-button pill-button--outlined" aria-pressed="false">
+        Play
+      </button>
+      <button type="button" id="fd-step-back" class="pill-button pill-button--outlined">&larr; Step</button>
+      <button type="button" id="fd-step" class="pill-button pill-button--outlined">Step &rarr;</button>
+      <label class="fd__threshold">
+        Threshold
+        <input type="range" id="fd-threshold" min="0.01" max="0.5" step="0.01" value="0.08" />
+        <span id="fd-threshold-value">0.08</span>
+      </label>
+      <span class="fd__frame-index" id="fd-frame-index">frame 0 / 0</span>
+    </div>
+
+    <div class="fd__plot-wrap">
+      <canvas class="fd__plot" id="fd-plot" role="img" aria-label="Changed pixel fraction per frame, with ticks marking recorded click and cursor-shape events."
+      ></canvas>
+      <p class="fd__plot-caption">
+        Changed-pixel fraction per frame (bars) against the take's own <code>events.json</code> —
+        a red tick is a click, a blue tick is a cursor-shape change. On this fixture the two are
+        <strong>uncorrelated</strong>: the square moves on its own fixed schedule, independent of
+        the hand-authored cursor track, so no rule can be read off this plot about event-triggered
+        vs. ambient change. That correlation is exactly what the real footage will show and this
+        one structurally cannot — see the caveat above.
+      </p>
+    </div>
+
+    <p class="visually-hidden" id="fd-status" aria-live="polite"></p>
+  </section>
+</BaseLayout>
+
+<style>
+  .fd {
+    padding-top: var(--space-2xl);
+    padding-bottom: var(--space-xl);
+  }
+
+  .fd__overline {
+    font-family: var(--font-mono);
+    font-size: var(--text-body-small);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-on-surface-muted);
+    margin-bottom: var(--space-xs);
+  }
+
+  .fd__heading {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--text-display-large);
+    line-height: var(--lh-display-large);
+    margin-bottom: var(--space-md);
+  }
+
+  .fd__intro {
+    font-family: var(--font-body);
+    font-size: var(--text-body-large);
+    line-height: var(--lh-body-large);
+    color: var(--color-on-surface-dimmed);
+    margin-bottom: var(--space-md);
+    max-width: var(--measure-prose);
+  }
+
+  .fd__caveat {
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    line-height: var(--lh-body-large);
+    color: var(--color-on-surface-dimmed);
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: var(--space-sm) var(--space-md);
+    margin-bottom: var(--space-lg);
+    max-width: var(--measure-prose);
+  }
+
+  .fd__frame {
+    height: clamp(240px, 45vh, 420px);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    overflow: clip;
+    margin-bottom: var(--space-sm);
+    background: var(--color-surface-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .fd__canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .fd__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-lg);
+  }
+
+  .fd__threshold {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+  }
+
+  .fd__frame-index {
+    margin-left: auto;
+    font-family: var(--font-body);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .fd__plot-wrap {
+    max-width: var(--measure-prose);
+  }
+
+  .fd__plot {
+    display: block;
+    width: 100%;
+    height: 96px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-surface-subtle);
+  }
+
+  .fd__plot-caption {
+    margin-top: var(--space-xs);
+    font-family: var(--font-mono);
+    font-size: var(--text-body-small);
+    color: var(--color-on-surface-muted);
+    line-height: var(--lh-body-large);
+  }
+</style>
+
+<script>
+  import { loadSession, type LoadedSession } from '../lib/session/session.ts';
+  import { decodeAll } from '../lib/session/decode.ts';
+  import { FrameDiffRenderer } from '../lib/frame-diff-gl.ts';
+  import type { Anchors } from '../lib/session/types.ts';
+
+  const ASSET_BASE = '/lab/study/frame-diff';
+
+  async function fetchArrayBuffer(path: string): Promise<ArrayBuffer> {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`fetch ${path}: ${res.status}`);
+    return res.arrayBuffer();
+  }
+  async function fetchJson<T>(path: string): Promise<T> {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`fetch ${path}: ${res.status}`);
+    return res.json() as Promise<T>;
+  }
+
+  function initFrameDiff() {
+    const canvasMaybe = document.getElementById('fd-canvas') as HTMLCanvasElement | null;
+    if (!canvasMaybe || canvasMaybe.dataset.fdInit === 'true') return;
+    canvasMaybe.dataset.fdInit = 'true';
+    const canvas: HTMLCanvasElement = canvasMaybe;
+
+    const playBtn = document.getElementById('fd-play') as HTMLButtonElement;
+    const stepBtn = document.getElementById('fd-step') as HTMLButtonElement;
+    const stepBackBtn = document.getElementById('fd-step-back') as HTMLButtonElement;
+    const thresholdInput = document.getElementById('fd-threshold') as HTMLInputElement;
+    const thresholdValue = document.getElementById('fd-threshold-value') as HTMLElement;
+    const frameIndexEl = document.getElementById('fd-frame-index') as HTMLElement;
+    const statusEl = document.getElementById('fd-status') as HTMLElement;
+    const plotCanvas = document.getElementById('fd-plot') as HTMLCanvasElement;
+    const plotCtx = plotCanvas.getContext('2d');
+
+    function announce(text: string) {
+      statusEl.textContent = text;
+    }
+
+    let renderer: FrameDiffRenderer | null = null;
+    let bitmaps: ImageBitmap[] = [];
+    let session: LoadedSession | null = null;
+    let scores: number[] = [];
+    let index = 1; // frame 0 has no predecessor to diff against
+    let running = false;
+    let rafId = 0;
+    let lastStepTime = 0;
+    const FPS_MS = 1000 / 12; // slow enough to actually watch the mask update
+
+    function threshold(): number {
+      return Number(thresholdInput.value);
+    }
+
+    function drawCurrent() {
+      if (!renderer || bitmaps.length === 0) return;
+      renderer.draw(bitmaps[index - 1]!, bitmaps[index]!, threshold());
+      frameIndexEl.textContent = `frame ${index} / ${bitmaps.length - 1}`;
+    }
+
+    function recomputeScores() {
+      if (!renderer || bitmaps.length < 2) return;
+      const t = threshold();
+      scores = [0]; // frame 0 has no predecessor
+      for (let i = 1; i < bitmaps.length; i++) {
+        scores.push(renderer.changedFraction(bitmaps[i - 1]!, bitmaps[i]!, t));
+      }
+      drawPlot();
+    }
+
+    function eventFrameIndices(): { down: number[]; cursor: number[] } {
+      const down: number[] = [];
+      const cursor: number[] = [];
+      if (!session) return { down, cursor };
+      const frames = session.frames;
+      const frameOf = (t: number) => {
+        // nearest source frame at-or-before t, matching the transform's own
+        // "greatest PTS <= t" rule — good enough for placing a tick.
+        let lo = 0, hi = frames.length - 1, best = 0;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (frames[mid]! <= t) { best = mid; lo = mid + 1; } else hi = mid - 1;
+        }
+        return best;
+      };
+      for (const e of session.events) {
+        if (e.kind === 'down') down.push(frameOf(e.t));
+        else if (e.kind === 'cursor') cursor.push(frameOf(e.t));
+      }
+      return { down, cursor };
+    }
+
+    function drawPlot() {
+      if (!plotCtx || scores.length === 0) return;
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = plotCanvas.clientWidth || 640;
+      const cssH = plotCanvas.clientHeight || 96;
+      plotCanvas.width = Math.round(cssW * dpr);
+      plotCanvas.height = Math.round(cssH * dpr);
+      plotCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const styles = getComputedStyle(document.documentElement);
+      const barColor = styles.getPropertyValue('--color-on-surface').trim() || '#000';
+      plotCtx.clearRect(0, 0, cssW, cssH);
+
+      const n = scores.length;
+      const barW = cssW / n;
+      const maxScore = Math.max(0.02, ...scores);
+      plotCtx.fillStyle = barColor;
+      for (let i = 0; i < n; i++) {
+        const h = (scores[i]! / maxScore) * (cssH - 4);
+        plotCtx.fillRect(i * barW, cssH - h, Math.max(1, barW - 1), h);
+      }
+
+      const { down, cursor } = eventFrameIndices();
+      plotCtx.fillStyle = '#e0453c';
+      for (const i of down) plotCtx.fillRect(i * barW, 0, Math.max(2, barW), 3);
+      plotCtx.fillStyle = '#3c6fe0';
+      for (const i of cursor) plotCtx.fillRect(i * barW, 0, Math.max(2, barW), 3);
+    }
+
+    function setRunning(next: boolean) {
+      running = next;
+      lastStepTime = 0;
+      playBtn.textContent = next ? 'Pause' : 'Play';
+      playBtn.setAttribute('aria-pressed', String(next));
+      announce(next ? 'Playing' : `Paused at frame ${index}`);
+    }
+
+    function advance(dir: 1 | -1) {
+      if (bitmaps.length < 2) return;
+      index = Math.min(bitmaps.length - 1, Math.max(1, index + dir));
+      drawCurrent();
+    }
+
+    function tick(t: number) {
+      rafId = requestAnimationFrame(tick);
+      if (!running) return;
+      if (t - lastStepTime >= FPS_MS) {
+        lastStepTime = t;
+        if (index >= bitmaps.length - 1) {
+          index = 1;
+        } else {
+          index++;
+        }
+        drawCurrent();
+      }
+    }
+
+    playBtn.addEventListener('click', () => setRunning(!running));
+    stepBtn.addEventListener('click', () => {
+      if (running) setRunning(false);
+      advance(1);
+    });
+    stepBackBtn.addEventListener('click', () => {
+      if (running) setRunning(false);
+      advance(-1);
+    });
+    thresholdInput.addEventListener('input', () => {
+      thresholdValue.textContent = threshold().toFixed(2);
+      drawCurrent();
+      recomputeScores();
+    });
+
+    async function boot() {
+      announce('Loading take…');
+      try {
+        const [anchors, eventsDoc, displayMp4] = await Promise.all([
+          fetchJson<Anchors>(`${ASSET_BASE}/anchors.json`),
+          fetchJson<{ version: number; events: import('../lib/session/types.ts').SessionEvent[] }>(
+            `${ASSET_BASE}/events.json`,
+          ),
+          fetchArrayBuffer(`${ASSET_BASE}/display.mp4`),
+        ]);
+        session = await loadSession({ anchors, events: eventsDoc, displayMp4 });
+        announce('Decoding frames…');
+        bitmaps = await decodeAll(session.video);
+        renderer = new FrameDiffRenderer(canvas);
+        index = Math.min(1, bitmaps.length - 1);
+        drawCurrent();
+        recomputeScores();
+        announce(`Loaded ${bitmaps.length} frames.`);
+      } catch (e) {
+        announce(`Failed to load: ${e instanceof Error ? e.message : String(e)}`);
+        throw e;
+      }
+    }
+
+    // --- Test hook (read-only view of internal state) ---
+    (window as any).__frameDiffTest = {
+      getFrameCount: () => bitmaps.length,
+      getIndex: () => index,
+      getScores: () => scores.slice(),
+      isRunning: () => running,
+    };
+
+    void boot();
+    rafId = requestAnimationFrame(tick);
+
+    document.addEventListener(
+      'astro:before-swap',
+      () => {
+        cancelAnimationFrame(rafId);
+        renderer?.dispose();
+        for (const b of bitmaps) b.close();
+        delete (window as any).__frameDiffTest;
+      },
+      { once: true },
+    );
+  }
+
+  initFrameDiff();
+  document.addEventListener('astro:page-load', initFrameDiff);
+</script>

@@ -1,0 +1,16 @@
+# Lab demo videos are REPLACED in place: the page embeds a fixed path
+# (/lab/videos/<slug>.mp4) so that re-recording a demo never costs a page edit
+# — see src/data/lab-demos.ts. A stable path with mutable content must not be
+# cached immutably, or a re-recorded demo stays invisible behind the CDN.
+# must-revalidate lets the edge keep the bytes and still check the ETag, so a
+# replacement is picked up on the next request without re-downloading an
+# unchanged file.
+/lab/videos/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Lab STUDY assets (STC-319) are a fixture take + its JSON sidecars, not a
+# recording that gets replaced in place — but the same reasoning applies
+# while a study is still swapping in better footage: must-revalidate rather
+# than an immutable cache, so a re-uploaded fixture is picked up promptly.
+/lab/study/*
+  Cache-Control: public, max-age=0, must-revalidate

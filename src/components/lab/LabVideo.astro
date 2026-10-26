@@ -1,0 +1,101 @@
+---
+// src/components/lab/LabVideo.astro
+// A recorded walkthrough sitting above the live piece on a /lab page.
+// Structurally modeled on the case-study <figure>/<figcaption> components.
+//
+// Renders NOTHING when the demo is absent or unpublished, so a page can carry
+// the embed before the recording exists — see src/data/lab-demos.ts.
+//
+// Playback is deliberately not the `autoplay` attribute:
+//   - `controls` is always present. A loop longer than five seconds that a
+//     viewer cannot pause fails WCAG 2.2.2, and this one runs ~50s.
+//   - autoplay is applied by script, and only when the viewer has not asked
+//     for reduced motion and the video is actually on screen. With no JS the
+//     poster and the controls are still a complete experience.
+import type { LabDemo } from '../../data/lab-demos.ts';
+
+interface Props {
+  demo?: LabDemo;
+}
+
+const { demo } = Astro.props;
+const show = demo?.published === true;
+---
+
+{show && demo && (
+  <figure class="lab-video">
+    <div class="lab-video__frame">
+      <video
+        class="lab-video__media"
+        src={demo.src}
+        poster={demo.poster}
+        width={demo.width}
+        height={demo.height}
+        aria-label={demo.label}
+        preload="metadata"
+        controls
+        loop
+        muted
+        playsinline
+      ></video>
+    </div>
+    <figcaption class="lab-video__caption">{demo.caption}</figcaption>
+  </figure>
+)}
+
+<style>
+  .lab-video {
+    margin: 0 0 var(--space-lg);
+  }
+
+  .lab-video__frame {
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    overflow: hidden;
+    background-color: var(--color-surface-subtle);
+    /* The graph the video shows is a light surface; a dark-theme viewer gets a
+       bright rectangle either way, so the frame matches the media rather than
+       the page and the border does the separating. */
+    line-height: 0;
+  }
+
+  .lab-video__media {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .lab-video__caption {
+    margin-top: var(--space-xs);
+    max-width: var(--measure-prose);
+    font-family: var(--font-mono);
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface-muted);
+    line-height: var(--lh-body-large);
+  }
+</style>
+
+<script>
+  // Play on screen, unless the viewer asked for less motion. Never autoplay
+  // off-screen: a muted loop nobody is looking at is decoded bandwidth.
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduced) {
+    const videos = document.querySelectorAll<HTMLVideoElement>('.lab-video__media');
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const video = entry.target as HTMLVideoElement;
+          if (entry.isIntersecting) {
+            // A rejected play() is not a failure worth reporting — a browser
+            // policy said no and the controls are right there.
+            void video.play().catch(() => {});
+          } else if (!video.paused) {
+            video.pause();
+          }
+        }
+      },
+      { threshold: 0.35 },
+    );
+    for (const video of videos) observer.observe(video);
+  }
+</script>

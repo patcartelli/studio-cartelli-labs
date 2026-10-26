@@ -12,6 +12,11 @@
   ],
   "exclude": ["dist", "node_modules"],
   "compilerOptions": {
-    "types": ["@cloudflare/workers-types"]
+    // @webgpu/types is here for STC-320's WGSL study (src/lib/frame-diff-gpu.ts).
+    // The DOM lib has no WebGPU declarations, so without it `navigator.gpu`,
+    // GPUDevice and every GPU* type are errors — and an unchecked GPU
+    // pipeline is exactly the code you cannot afford to hand-verify, since
+    // none of it runs at build time.
+    "types": ["@cloudflare/workers-types", "@webgpu/types"]
   }
 }
