@@ -38,7 +38,12 @@ export default defineConfig({
     '/experiments/network': { status: 301, destination: '/lab/network' },
   },
   integrations: [
-    sitemap(),
+    sitemap({
+      // STC-209: the frame-difference studies (STC-319/STC-320) are unlisted
+      // working notes, noindex on the page and absent from labEntries. Keep
+      // them out of the sitemap too.
+      filter: (page) => !page.startsWith('https://studiocartelli.com/lab/frame-diff'),
+    }),
   ],
   vite: {
     server: {

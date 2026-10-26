@@ -8,6 +8,8 @@ import type { Artist } from '../lib/lastfm';
 import { getCachedNetworkData } from '../lib/network-cache';
 import { changelog } from '../data/changelog';
 import { GENRE_FAMILIES, genreFamilySlug, type GenreFamily } from '../lib/genre-families';
+import LabVideo from '../components/lab/LabVideo.astro';
+import { labDemos } from '../data/lab-demos';
 
 // Legend entries: the three coloured families, then the uncoloured bucket.
 const legendFamilies: GenreFamily[] = [...GENRE_FAMILIES, 'other'];
@@ -245,6 +247,8 @@ const staleAgeText = formatRelativeAge(fetchedAt);
   </Fragment>
   <section class="network container">
     <h1 class="network__heading">Network.</h1>
+
+    <LabVideo demo={labDemos.network} />
 
     {!hasError && (
       <p class="network__meta">
