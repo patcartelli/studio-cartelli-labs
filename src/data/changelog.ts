@@ -19,6 +19,8 @@ export const changelog: ChangelogEntry[] = [
     date: '2026-10-30',
     items: [
       { label: 'feature',     text: 'Outside influences — artists a Wikidata claim says shaped one of yours, but who are not in this period’s top 100, appear as dashed ghost nodes tethered to the artist they influenced' },
+      { label: 'improvement', text: 'Cleaner graph — links that only share a tag are no longer drawn (they still keep same-genre artists clustered), similarity links thicken and brighten with their match score and take the colour of the artist they start from, and nodes get a keyline so they stand apart from the lines beneath' },
+      { label: 'improvement', text: 'Only the 18 most-played artists keep a permanent label; hover names any node, and searching labels what it finds' },
       { label: 'bugfix',      text: 'Influence lookup now requires a MusicBrainz ID on both ends, so "Air" or "Phoenix" no longer match non-musicians and organizations are no longer shown as influencers' },
     ],
   },

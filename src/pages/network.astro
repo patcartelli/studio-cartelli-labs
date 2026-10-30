@@ -522,7 +522,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     flex-shrink: 0;
     /* Identity is never colour-alone: the swatch sits beside a text label. */
     background-color: var(--genre-other);
-    opacity: 0.75; /* matches FULL_NODE_OPACITY on the nodes themselves */
+    opacity: 0.95; /* matches FULL_NODE_OPACITY on the nodes themselves */
   }
   .network__legend-swatch--electronic { background-color: var(--genre-electronic); }
   .network__legend-swatch--rock { background-color: var(--genre-rock); }
@@ -823,7 +823,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
 
     // Node radius: square-root scale so area is proportional to play count
     const maxPlaycount = d3.max(graphData.nodes, (d) => d.playcount) ?? 1;
-    const radiusScale = d3.scaleSqrt().domain([0, maxPlaycount]).range([3, 22]);
+    const radiusScale = d3.scaleSqrt().domain([0, maxPlaycount]).range([2.5, 17]);
 
     // XSS prevention: escape artist names and tags before inserting into tooltip HTML
     function escapeHtml(str: string): string {
@@ -861,7 +861,8 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       .attr('markerUnits', 'userSpaceOnUse')
       .append('polygon')
       .attr('points', '0 0, 6 3, 0 6')
-      .attr('fill', 'var(--color-border)');
+      .attr('fill', 'var(--color-on-surface)')
+      .attr('fill-opacity', 0.7);
 
     // Deep-copy nodes and links so D3 can mutate them safely.
     // Scatter the initial positions across a virtual canvas much larger
@@ -1104,15 +1105,47 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     simulation.stop();
     for (let i = 0; i < 300; i++) simulation.tick();
 
+    // --- Edge and label styling ---
+    // Three kinds of artist edge, drawn very differently:
+    //   influence  -- Wikidata P737, the rarest and most meaningful: ink, bold.
+    //   similarity -- Last.fm match score, so weight and strength scale with it
+    //                 and the line takes the genre colour of the artist it
+    //                 starts from.
+    //   tag-only   -- shares a tag and nothing else. These are ~80% of the links
+    //                 and, drawn, bury everything else in a hairball, so they are
+    //                 not drawn at all. They still pull on the force layout, which
+    //                 is what keeps same-genre artists clustered.
+    type StyledLink = { source: any; target: any; similarity?: number; influenceDirection?: string };
+    const isInfluenceEdge = (l: StyledLink) => !!l.influenceDirection;
+    const isTagOnlyEdge = (l: StyledLink) => !((l.similarity ?? 0) > 0) && !l.influenceDirection;
+    const edgeSimilarity = (l: StyledLink) => l.similarity ?? 0;
+    const edgeStroke = (l: StyledLink) =>
+      isInfluenceEdge(l) ? 'var(--color-on-surface)' : familyFill((l.source as { id: string }).id);
+    const edgeWidth = (l: StyledLink) =>
+      isInfluenceEdge(l) ? 1.5 : isTagOnlyEdge(l) ? 0 : 0.6 + 2.4 * edgeSimilarity(l);
+    const edgeOpacity = (l: StyledLink) =>
+      isInfluenceEdge(l) ? 0.85 : isTagOnlyEdge(l) ? 0 : 0.2 + 0.6 * edgeSimilarity(l);
+
+    // Only the most-played artists carry a visible label; hover names the rest.
+    // A search hit is labelled too, so searching actually points at something.
+    const TOP_LABEL_COUNT = 18;
+    const playRank = new Map<string, number>();
+    [...nodes].sort((a, b) => b.playcount - a.playcount).forEach((n, i) => playRank.set(n.id, i));
+    const labelOpacity = (d: { id: string; name: string }) => {
+      const searched =
+        state.searchTerm !== '' && d.name.toLowerCase().includes(state.searchTerm.toLowerCase());
+      return searched || (playRank.get(d.id) ?? Infinity) < TOP_LABEL_COUNT ? 0.85 : 0;
+    };
+
     // Links
     const link = g
       .append('g')
-      .attr('stroke', 'var(--color-border)')
-      .attr('stroke-opacity', 0.5)
       .selectAll('line')
       .data(links)
       .join('line')
-      .attr('stroke-width', 1)
+      .attr('stroke', (d: any) => edgeStroke(d))
+      .attr('stroke-width', (d: any) => edgeWidth(d))
+      .attr('stroke-opacity', (d: any) => edgeOpacity(d))
       .attr('marker-end', (d: any) => {
         const ld = d as { influenceDirection?: string };
         return ld.influenceDirection ? 'url(#arrowhead)' : null;
@@ -1126,7 +1159,8 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       .attr('stroke', 'transparent')
       .attr('stroke-width', 8)
       .attr('cursor', 'pointer')
-      .style('pointer-events', 'stroke');
+      // An undrawn (tag-only) edge must not be hoverable either.
+      .style('pointer-events', (d: any) => (edgeOpacity(d) === 0 ? 'none' : 'stroke'));
 
     // Ghost influence edges: influencer -> influenced, dotted and always
     // arrowed. Added before the node layers so they draw underneath.
@@ -1181,7 +1215,10 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       .attr('r', (d) => radiusScale(d.playcount))
       .attr('fill', (d) => familyFill(d.id))
       // Matches FULL_NODE_OPACITY, which applyFilters resets to on first run.
-      .attr('fill-opacity', 0.75)
+      .attr('fill-opacity', 0.95)
+      // Keyline in the page colour so a node stays separate from the lines under it.
+      .attr('stroke', 'var(--color-surface)')
+      .attr('stroke-width', 1.5)
       .attr('pointer-events', 'none');
 
     // Labels
@@ -1194,7 +1231,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       .attr('text-anchor', 'middle')
       .attr('font-size', '9px')
       .attr('fill', 'var(--color-on-surface)')
-      .attr('fill-opacity', 0.7)
+      .attr('fill-opacity', (d) => labelOpacity(d))
       .attr('pointer-events', 'none')
       .attr('user-select', 'none');
 
@@ -1296,8 +1333,8 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     // --- Filter opacity constants ---
     const GHOST_OPACITY = 0.08;
     const EDGE_GHOST_OPACITY = 0.05;
-    const FULL_NODE_OPACITY = 0.75;
-    const FULL_LABEL_OPACITY = 0.70;
+    const FULL_NODE_OPACITY = 0.95;
+    // Ghost (outside-influence) edges only; artist edges use edgeOpacity().
     const FULL_EDGE_OPACITY = 0.50;
 
     function applyFilters() {
@@ -1346,11 +1383,17 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       });
 
       // 4. Apply opacity to nodes and labels
-      node.transition().duration(150).attr('fill-opacity', (d: any) =>
-        ghostedNodes.has(d.id) ? GHOST_OPACITY : FULL_NODE_OPACITY
-      );
+      // One transition for both attributes: a second unnamed node.transition()
+      // would interrupt this one and the fill would never change.
+      node
+        .transition()
+        .duration(150)
+        .attr('fill-opacity', (d: any) => (ghostedNodes.has(d.id) ? GHOST_OPACITY : FULL_NODE_OPACITY))
+        .attr('stroke-opacity', (d: any) => (ghostedNodes.has(d.id) ? GHOST_OPACITY : 1));
       label.transition().duration(150).attr('fill-opacity', (d: any) =>
-        ghostedNodes.has(d.id) ? GHOST_OPACITY : FULL_LABEL_OPACITY
+        // A label that is hidden by design stays hidden when ghosted, rather
+        // than fading up to the ghost opacity.
+        labelOpacity(d) === 0 ? 0 : ghostedNodes.has(d.id) ? GHOST_OPACITY : labelOpacity(d)
       );
 
       // 5. Apply opacity to edges
@@ -1360,12 +1403,14 @@ const staleAgeText = formatRelativeAge(fetchedAt);
         const tgt = typeof l.target === 'object'
           ? (l.target as { id: string }).id : l.target as string;
         const sim = (l as { similarity?: number }).similarity ?? 0;
+        // Undrawn (tag-only) edges stay undrawn however the filters are set.
+        if (edgeOpacity(l) === 0) return 0;
         if ((similarityThreshold > 0 && sim < similarityThreshold)
             || ghostedNodes.has(src)
             || ghostedNodes.has(tgt)) {
           return EDGE_GHOST_OPACITY;
         }
-        return FULL_EDGE_OPACITY;
+        return edgeOpacity(l);
       });
 
       // Sync arrowhead visibility with edge ghost state (VIS-01, Pitfall 3)

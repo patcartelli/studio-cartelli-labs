@@ -122,18 +122,18 @@ test('search input ghosts non-matching nodes (SEARCH-01)', async ({ page }) => {
   await page.locator('#ctrl-search').fill('a');
   // Wait for D3 transition to complete (150ms duration + buffer)
   await page.waitForTimeout(300);
-  // Some nodes should be ghosted (fill-opacity < 0.75)
+  // Some nodes should be ghosted (fill-opacity < 0.95)
   const ghostedNodes = await page.locator('svg circle[fill-opacity="0.08"]').count();
   // At least one node should be ghosted (unless every artist has 'a' in their name)
   // and at least one node should remain visible
-  const visibleNodes = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const visibleNodes = await page.locator('svg circle[fill-opacity="0.95"]').count();
   expect(visibleNodes).toBeGreaterThan(0);
   expect(visibleNodes + ghostedNodes).toBe(totalNodes);
   // Clear the search -- all nodes restore to full opacity (D-04)
   await page.locator('#ctrl-search').fill('');
   // Wait for D3 transition to complete
   await page.waitForTimeout(300);
-  const restoredNodes = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const restoredNodes = await page.locator('svg circle[fill-opacity="0.95"]').count();
   expect(restoredNodes).toBe(totalNodes);
 });
 
@@ -159,7 +159,7 @@ test('genre dropdown ghosts nodes without selected tag (SEARCH-02)', async ({ pa
   await page.locator('#ctrl-genre-filter').selectOption({ value: '' });
   // Wait for D3 transition to complete
   await page.waitForTimeout(300);
-  const restoredNodes = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const restoredNodes = await page.locator('svg circle[fill-opacity="0.95"]').count();
   expect(restoredNodes).toBe(totalNodes);
 });
 
@@ -204,12 +204,12 @@ test('search and genre filter work together as intersection (SEARCH-04)', async 
   await page.locator('#ctrl-genre-filter').selectOption({ index: 1 });
   // Wait for D3 transition to complete (150ms duration + buffer)
   await page.waitForTimeout(300);
-  const afterGenre = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const afterGenre = await page.locator('svg circle[fill-opacity="0.95"]').count();
   // Now add a search term -- visible count should be <= genre-only count
   await page.locator('#ctrl-search').fill('a');
   // Wait for D3 transition to complete
   await page.waitForTimeout(300);
-  const afterBoth = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const afterBoth = await page.locator('svg circle[fill-opacity="0.95"]').count();
   expect(afterBoth).toBeLessThanOrEqual(afterGenre);
   // Combined ghosted + visible should equal total
   const ghostedAfterBoth = await page.locator('svg circle[fill-opacity="0.08"]').count();
@@ -536,3 +536,66 @@ test('influence edge endpoints are retracted to node perimeter (VIS-03)', async 
   expect(exactCenterMatch).toBe(false);
 });
 
+
+// --- Edge and label styling ---------------------------------------------
+// Tag-only edges (~80% of links) are not drawn, and only the most-played
+// artists carry a visible label. See the "Edge and label styling" block in
+// src/pages/network.astro.
+
+test('tag-only edges are undrawn and unhoverable; drawn edges remain', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  const edges = await page.evaluate(() => {
+    const lines = Array.from(document.querySelectorAll('svg line[stroke-opacity]:not(.network__ghost-edge)'));
+    const hidden = lines.filter((l) => l.getAttribute('stroke-opacity') === '0');
+    const hit = Array.from(document.querySelectorAll('svg line[stroke="transparent"]'));
+    return {
+      total: lines.length,
+      hidden: hidden.length,
+      hitTotal: hit.length,
+      hitInert: hit.filter((l) => (l as SVGElement).style.pointerEvents === 'none').length,
+    };
+  });
+
+  expect(edges.hidden, 'some edges should be tag-only and undrawn').toBeGreaterThan(0);
+  expect(edges.hidden, 'similarity/influence edges must still be drawn').toBeLessThan(edges.total);
+  // Every undrawn edge has an inert hit line, so a tooltip never fires on nothing.
+  expect(edges.hitInert).toBe(edges.hidden);
+  expect(edges.hitTotal).toBe(edges.total);
+});
+
+test('at most the 18 most-played artists carry a visible label', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  const nodeCount = await page.locator('svg circle[fill-opacity]').count();
+  const visibleLabels = await page.locator('svg text[fill-opacity="0.85"]').count();
+  expect(visibleLabels).toBe(Math.min(18, nodeCount));
+});
+
+test('a search hit outside the top 18 gets a label', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  const nodeCount = await page.locator('svg circle[fill-opacity]').count();
+  // A cold-cache build only has a partial graph (one 15-artist chunk), where
+  // every artist is within the top 18 and there is nothing to reveal.
+  test.skip(nodeCount <= 18, `needs more than 18 nodes to have an unlabelled one; graph has ${nodeCount}`);
+
+  const visibleLabels = page.locator('svg text[fill-opacity="0.85"]');
+  // The least-played artist is, by construction, not among the top 18.
+  const leastPlayed = await page.evaluate(() => {
+    const g = JSON.parse(document.getElementById('graph-data')!.textContent!) as {
+      nodes: { name: string; playcount: number }[];
+    };
+    return [...g.nodes].sort((a, b) => a.playcount - b.playcount)[0].name;
+  });
+  await expect(visibleLabels.filter({ hasText: leastPlayed })).toHaveCount(0);
+
+  await page.locator('#ctrl-search').fill(leastPlayed);
+  await expect(visibleLabels.filter({ hasText: leastPlayed }).first()).toBeAttached();
+});
