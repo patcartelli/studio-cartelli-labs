@@ -1,4 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+// The Filters panel starts folded on a phone so it doesn't cover the graph;
+// open it before touching a control inside it.
+async function openFilters(page: Page) {
+  const toggle = page.locator('#ctrl-panel-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+}
 
 test('network page has heading and period filter', async ({ page }) => {
   await page.goto('/lab/network');
@@ -96,6 +103,7 @@ test('network page has search, genre filter, and threshold controls', async ({ p
     page.locator('.network__error'),
     '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
   ).toHaveCount(0);
+  await openFilters(page);
   await expect(page.locator('#ctrl-search')).toBeVisible();
   await expect(page.locator('#ctrl-genre-filter')).toBeVisible();
   await expect(page.locator('#ctrl-threshold')).toBeVisible();
@@ -119,6 +127,7 @@ test('search input ghosts non-matching nodes (SEARCH-01)', async ({ page }) => {
   // Get total data node count (genre pole circles have no fill-opacity attribute)
   const totalNodes = await page.locator('svg circle[fill-opacity]').count();
   // Type a search term that is unlikely to match all nodes
+  await openFilters(page);
   await page.locator('#ctrl-search').fill('a');
   // Wait for D3 transition to complete (150ms duration + buffer)
   await page.waitForTimeout(300);
@@ -149,6 +158,7 @@ test('genre dropdown ghosts nodes without selected tag (SEARCH-02)', async ({ pa
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   const totalNodes = await page.locator('svg circle[fill-opacity]').count();
   // Select the second option (first real tag after "all tags")
+  await openFilters(page);
   await page.locator('#ctrl-genre-filter').selectOption({ index: 1 });
   // Wait for D3 transition to complete (150ms duration + buffer)
   await page.waitForTimeout(300);
@@ -174,6 +184,7 @@ test('threshold slider ghosts low-similarity edges and disconnected nodes (SEARC
   ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   // Move threshold to 0.5 (should ghost some edges and nodes)
+  await openFilters(page);
   await page.locator('#ctrl-threshold').fill('0.5');
   await page.locator('#ctrl-threshold').dispatchEvent('input');
   // Check that the label updated
@@ -201,6 +212,7 @@ test('search and genre filter work together as intersection (SEARCH-04)', async 
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   const totalNodes = await page.locator('svg circle[fill-opacity]').count();
   // Apply genre filter first
+  await openFilters(page);
   await page.locator('#ctrl-genre-filter').selectOption({ index: 1 });
   // Wait for D3 transition to complete (150ms duration + buffer)
   await page.waitForTimeout(300);
@@ -596,6 +608,74 @@ test('a search hit outside the top 18 gets a label', async ({ page }) => {
   });
   await expect(visibleLabels.filter({ hasText: leastPlayed })).toHaveCount(0);
 
+  await openFilters(page);
   await page.locator('#ctrl-search').fill(leastPlayed);
   await expect(visibleLabels.filter({ hasText: leastPlayed }).first()).toBeAttached();
+});
+
+// --- Floating controls ------------------------------------------------------
+
+test('similarity readout counts surviving links, and clear resets every filter', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+  await openFilters(page);
+
+  const readout = page.locator('#ctrl-link-count');
+  await expect(readout).toHaveText(/^\d+ links$/);
+  const total = parseInt((await readout.textContent()) ?? '0', 10);
+  expect(total).toBeGreaterThan(0);
+
+  const badge = page.locator('#ctrl-active-count');
+  const clear = page.locator('#ctrl-clear');
+  await expect(clear).toBeHidden();
+
+  await page.locator('#ctrl-threshold').fill('0.5');
+  await page.locator('#ctrl-threshold').dispatchEvent('input');
+  await expect(readout).toHaveText(new RegExp(`^\\d+ of ${total} links$`));
+  await expect(badge).toHaveText('1');
+  await expect(clear).toBeVisible();
+
+  await page.locator('#ctrl-search').fill('a');
+  await expect(badge).toHaveText('2');
+
+  await clear.click();
+  await expect(clear).toBeHidden();
+  await expect(badge).toBeHidden();
+  await expect(page.locator('#ctrl-search')).toHaveValue('');
+  await expect(page.locator('#ctrl-threshold')).toHaveValue('0');
+  await expect(page.locator('#ctrl-threshold-label')).toContainText('similarity: 0.0');
+  await expect(readout).toHaveText(`${total} links`);
+});
+
+test('the Filters panel folds and unfolds', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await openFilters(page);
+
+  const toggle = page.locator('#ctrl-panel-toggle');
+  const body = page.locator('#network-panel-body');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(body).toBeVisible();
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(body).toBeHidden();
+
+  await toggle.click();
+  await expect(body).toBeVisible();
+});
+
+test('legend never offers a genre family with no artists', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  const offered = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.network__legend-item'))
+      .filter((b) => !b.closest('li')?.hasAttribute('hidden'))
+      .map((b) => b.querySelector('.network__legend-count')?.textContent ?? '')
+  );
+  expect(offered.length).toBeGreaterThan(0);
+  offered.forEach((count) => expect(Number(count)).toBeGreaterThan(0));
 });

@@ -267,78 +267,99 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       </p>
     )}
 
-    <nav class="network__periods" aria-label="Time period filter">
-      {VALID_PERIODS.map((p) => (
-        <a
-          href={`?period=${p}`}
-          class={`network__period-btn${p === period ? ' network__period-btn--active' : ''}`}
-        >
-          {periodLabels[p]}
-        </a>
-      ))}
-    </nav>
+    <div id="network-stage" class={`network__stage${hasError ? ' network__stage--error' : ''}`}>
+      {hasError ? (
+        <p class="network__error">Network unavailable — check back soon.</p>
+      ) : (
+        <div id="network-container" class="network__canvas">
+          <p class="network__loading">Loading network...</p>
+        </div>
+      )}
 
-    <nav class="network__controls" aria-label="Graph controls">
-      <button id="ctrl-genre" class="network__control" aria-pressed="false">genre</button>
-      <button id="ctrl-fullscreen" class="network__control" aria-pressed="false">⤢ fullscreen</button>
-      <input
-        id="ctrl-search"
-        class="network__control network__control--input"
-        type="text"
-        placeholder="search artists"
-        autocomplete="off"
-        aria-label="Search artists by name"
-      />
-      <select id="ctrl-genre-filter" class="network__control" aria-label="Filter by tag">
-        <option value="">all tags</option>
-      </select>
-      <label class="network__control network__control--slider-label" id="ctrl-threshold-label">
-        similarity: 0.0
-        <input
-          id="ctrl-threshold"
-          type="range"
-          min="0" max="1" step="0.1" value="0"
-          aria-label="Similarity threshold"
-          aria-valuetext="0.0"
-        />
-      </label>
-    </nav>
-
-    {!hasError && (
-      <ul class="network__legend" aria-label="Genre colour key">
-        {legendFamilies.map((family) => (
-          <li>
-            <button
-              type="button"
-              class="network__legend-item"
-              data-genre-family={genreFamilySlug(family)}
-              aria-pressed="false"
-            >
-              <span
-                class={`network__legend-swatch network__legend-swatch--${genreFamilySlug(family)}`}
-                aria-hidden="true"
-              />
-              <span class="network__legend-label">{family}</span>
-              <span class="network__legend-count" data-genre-family={genreFamilySlug(family)} />
-            </button>
-          </li>
+      <nav class="network__periods network__overlay network__overlay--tr" aria-label="Time period filter">
+        {VALID_PERIODS.map((p) => (
+          <a
+            href={`?period=${p}`}
+            class={`network__period-btn${p === period ? ' network__period-btn--active' : ''}`}
+          >
+            {periodLabels[p]}
+          </a>
         ))}
-        {ghostData.nodes.length > 0 && (
-          <li class="network__legend-note">
-            <span class="network__legend-ghost-swatch" aria-hidden="true" />
-            outside influence {ghostData.nodes.length}
-          </li>
-        )}
-      </ul>
-    )}
+      </nav>
 
-    {hasError ? (
-      <p class="network__error">Network unavailable — check back soon.</p>
-    ) : (
-      <div id="network-container" class="network__canvas">
-        <p class="network__loading">Loading network...</p>
+      <section id="network-panel" class="network__panel network__overlay network__overlay--tl" aria-label="Graph controls">
+        <div class="network__panel-head">
+          <button
+            type="button"
+            id="ctrl-panel-toggle"
+            class="network__panel-toggle"
+            aria-expanded="true"
+            aria-controls="network-panel-body"
+          >
+            Filters <span id="ctrl-active-count" class="network__panel-count" hidden></span>
+            <span class="network__panel-caret" aria-hidden="true">▾</span>
+          </button>
+          <button type="button" id="ctrl-clear" class="network__panel-clear" hidden>clear</button>
+        </div>
+        <div id="network-panel-body" class="network__controls">
+          <input
+            id="ctrl-search"
+            class="network__control network__control--input"
+            type="text"
+            placeholder="search artists"
+            autocomplete="off"
+            aria-label="Search artists by name"
+          />
+          <select id="ctrl-genre-filter" class="network__control" aria-label="Filter by tag">
+            <option value="">all tags</option>
+          </select>
+          <label class="network__slider" id="ctrl-threshold-label">
+            <span id="ctrl-threshold-text" class="network__slider-text">min similarity: 0.0</span>
+            <input
+              id="ctrl-threshold"
+              type="range"
+              min="0" max="1" step="0.1" value="0"
+              aria-label="Similarity threshold"
+              aria-valuetext="0.0"
+            />
+            <span id="ctrl-link-count" class="network__slider-count" aria-live="polite"></span>
+          </label>
+        </div>
+      </section>
+
+      <div class="network__tools network__overlay network__overlay--bl">
+        <button id="ctrl-genre" class="network__control" aria-pressed="false">cluster by genre</button>
+        <button id="ctrl-fullscreen" class="network__control" aria-pressed="false">⤢ fullscreen</button>
       </div>
-    )}
+
+      {!hasError && (
+        <ul class="network__legend network__overlay network__overlay--br" aria-label="Genre colour key">
+          {legendFamilies.map((family) => (
+            <li>
+              <button
+                type="button"
+                class="network__legend-item"
+                data-genre-family={genreFamilySlug(family)}
+                aria-pressed="false"
+              >
+                <span
+                  class={`network__legend-swatch network__legend-swatch--${genreFamilySlug(family)}`}
+                  aria-hidden="true"
+                />
+                <span class="network__legend-label">{family}</span>
+                <span class="network__legend-count" data-genre-family={genreFamilySlug(family)} />
+              </button>
+            </li>
+          ))}
+          {ghostData.nodes.length > 0 && (
+            <li class="network__legend-note">
+              <span class="network__legend-ghost-swatch" aria-hidden="true" />
+              outside influence {ghostData.nodes.length}
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
   </section>
 
   {!hasError && (
@@ -474,8 +495,10 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     font-size: var(--text-body-medium);
     color: var(--color-on-surface-dimmed);
   }
-  .network__legend-note {
-    display: inline-flex;
+  /* Two classes: `.network__legend li` is display:contents and would win. */
+  .network__legend .network__legend-note {
+    display: flex;
+    white-space: nowrap;
     align-items: center;
     gap: var(--space-2xs);
     padding: 2px 6px;
@@ -556,28 +579,119 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     color: var(--color-on-surface-dimmed);
     margin-bottom: var(--space-lg);
   }
-  .network__periods {
-    display: flex;
-    gap: var(--space-xs);
+  /* ── Stage: the canvas plus the controls floating over it ── */
+  .network__stage {
+    position: relative;
     margin-bottom: var(--space-lg);
+  }
+  .network__stage--error {
+    min-height: 220px;
+  }
+  .network__stage .network__canvas {
+    margin: 0;
+  }
+  .network__stage:fullscreen {
+    background: var(--color-surface);
+    margin: 0;
+  }
+  .network__stage:fullscreen .network__canvas {
+    height: 100vh;
+    min-height: 100vh;
+    border: 0;
+  }
+  .network__overlay {
+    position: absolute;
+    z-index: 5;
+    /* Translucent so the graph still reads through; the blur keeps small
+       labels behind a panel from fighting the panel's own text. */
+    background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+  }
+  .network__overlay--tl { top: 12px; left: 12px; }
+  .network__overlay--tr { top: 12px; right: 12px; }
+  .network__overlay--bl { bottom: 12px; left: 12px; }
+  .network__overlay--br { bottom: 12px; right: 12px; }
+
+  /* Period: one segmented control, top right. */
+  .network__periods {
+    display: inline-flex;
   }
   .network__period-btn {
     display: inline-block;
-    padding: 4px 12px;
-    border: 1px solid var(--color-border);
+    padding: 4px 10px;
     font-size: var(--text-body-medium);
     color: var(--color-on-surface-dimmed);
-    border-radius: 2px;
+    border-right: 1px solid var(--color-border);
+  }
+  .network__period-btn:last-child {
+    border-right: 0;
   }
   .network__period-btn--active {
-    border-color: var(--color-on-surface);
-    color: var(--color-on-surface);
+    background: var(--color-on-surface);
+    color: var(--color-surface);
     font-weight: 700;
+  }
+
+  /* Filters panel, top left; collapses to its header. */
+  .network__panel {
+    width: 220px;
+    max-width: calc(100% - 24px);
+    padding: 8px;
+  }
+  .network__panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-xs);
+  }
+  .network__panel-toggle,
+  .network__panel-clear {
+    background: none;
+    border: 0;
+    padding: 2px 0;
+    font: inherit;
+    font-size: var(--text-body-medium);
+    color: var(--color-on-surface);
+    cursor: pointer;
+  }
+  .network__panel-clear {
+    color: var(--color-on-surface-dimmed);
+    text-decoration: underline;
+  }
+  .network__panel-clear[hidden],
+  .network__panel-count[hidden] {
+    display: none;
+  }
+  .network__panel-count {
+    display: inline-block;
+    min-width: 16px;
+    padding: 0 4px;
+    margin-left: 2px;
+    border-radius: 8px;
+    background: var(--color-on-surface);
+    color: var(--color-surface);
+    font-size: 11px;
+    text-align: center;
+  }
+  .network__panel-caret {
+    display: inline-block;
+    margin-left: 4px;
+    transition: transform 150ms ease;
+  }
+  .network__panel-toggle[aria-expanded='false'] .network__panel-caret {
+    transform: rotate(-90deg);
   }
   .network__controls {
     display: flex;
+    flex-direction: column;
     gap: var(--space-xs);
-    margin-bottom: var(--space-lg);
+    margin-top: var(--space-xs);
+  }
+  .network__controls[hidden] {
+    display: none;
   }
   .network__control {
     display: inline-block;
@@ -590,6 +704,10 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     cursor: pointer;
     font-family: var(--font-body);
   }
+  .network__panel .network__control {
+    width: 100%;
+    box-sizing: border-box;
+  }
   .network__control[hidden] {
     display: none;
   }
@@ -601,16 +719,42 @@ const staleAgeText = formatRelativeAge(fetchedAt);
   .network__control--input {
     cursor: text;
   }
-  .network__control--slider-label {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2xs);
-    cursor: default;
+  .network__slider {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     font-size: var(--text-body-medium);
+    color: var(--color-on-surface-dimmed);
   }
-  .network__control--slider-label input[type="range"] {
-    width: 80px;
+  .network__slider input[type="range"] {
+    width: 100%;
+    margin: 4px 0;
     cursor: pointer;
+  }
+  .network__slider-count {
+    font-size: 11px;
+    color: var(--color-on-surface-muted);
+  }
+
+  /* View toggles, bottom left. */
+  .network__tools {
+    display: flex;
+    gap: var(--space-xs);
+    padding: 6px;
+  }
+
+  /* Legend, bottom right: a vertical key rather than a wrapping row. */
+  .network__legend.network__overlay {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 0;
+    margin: 0;
+    padding: 4px;
+    max-width: 46%;
+  }
+  .network__legend li[hidden] {
+    display: none;
   }
   .network__error {
     color: var(--color-on-surface-dimmed);
@@ -748,14 +892,36 @@ const staleAgeText = formatRelativeAge(fetchedAt);
 
   /* ── Mobile ── */
   @media (max-width: 480px) {
-    .network__periods {
+    /* On a phone there is no room to float a key over the graph: it drops
+       below the canvas as an ordinary wrapping row. */
+    .network__legend.network__overlay {
+      position: static;
+      flex-direction: row;
       flex-wrap: wrap;
+      gap: var(--space-2xs) var(--space-sm);
+      max-width: none;
+      margin-top: var(--space-xs);
+      border: 0;
+      background: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
     }
-    .network__controls {
-      flex-wrap: wrap;
+    /* The period control takes the top row; the panel drops under it. */
+    .network__overlay--tl {
+      top: 52px;
     }
-    .network__control--slider-label {
-      width: 100%;
+    .network__panel {
+      width: 180px;
+    }
+    /* View toggles join the key below the canvas rather than sit on top of it. */
+    .network__tools.network__overlay {
+      position: static;
+      margin-top: var(--space-xs);
+      padding: 0;
+      border: 0;
+      background: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
     }
   }
 </style>
@@ -952,7 +1118,11 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     });
     document.querySelectorAll<HTMLElement>('.network__legend-count').forEach((el) => {
       const slug = el.dataset.genreFamily;
-      if (slug) el.textContent = String(familyCounts.get(slug) ?? 0);
+      if (!slug) return;
+      const count = familyCounts.get(slug) ?? 0;
+      el.textContent = String(count);
+      // A family with no artists can't isolate anything; don't offer it.
+      if (count === 0) el.closest('li')?.setAttribute('hidden', '');
     });
 
     // --- Interactive legend (STC-339) ---
@@ -1429,14 +1599,15 @@ const staleAgeText = formatRelativeAge(fetchedAt);
       });
 
       // Ghost influencers follow the artists they influenced: dimmed once every
-      // one of those artists is, or under any similarity threshold (ghost edges
-      // carry no similarity, like the in-graph influence edges). A search hit
-      // on the ghost's own name keeps it lit.
+      // one of those artists is. They are not subject to the similarity cutoff
+      // themselves -- an influence claim has no similarity score, so applying
+      // one would dim every ghost the moment the slider moved off zero. A
+      // search hit on the ghost's own name keeps it lit.
       const dimmedGhosts = new Set<string>();
       ghostNodes.forEach((gn) => {
         const searchHit = searchTerm !== '' && gn.name.toLowerCase().includes(searchTerm.toLowerCase());
         const allDimmed = (ghostTargets.get(gn.id) ?? []).every((id) => ghostedNodes.has(id));
-        if (!searchHit && (similarityThreshold > 0 || allDimmed)) dimmedGhosts.add(gn.id);
+        if (!searchHit && allDimmed) dimmedGhosts.add(gn.id);
       });
       ghostNode.transition().duration(150).attr('opacity', (d) => (dimmedGhosts.has(d.id) ? GHOST_OPACITY : 0.6));
       ghostLabel.transition().duration(150).attr('opacity', (d) => (dimmedGhosts.has(d.id) ? GHOST_OPACITY : 0.5));
@@ -1450,6 +1621,8 @@ const staleAgeText = formatRelativeAge(fetchedAt);
         .duration(150)
         .attr('stroke-opacity', (l) => (ghostEdgeDimmed(l) ? EDGE_GHOST_OPACITY : FULL_EDGE_OPACITY));
       ghostLink.attr('marker-end', (l) => (ghostEdgeDimmed(l) ? null : 'url(#arrowhead)'));
+
+      refreshPanelState();
     }
 
     // Genre nodes (hidden until genre toggle is ON)
@@ -1875,7 +2048,9 @@ const staleAgeText = formatRelativeAge(fetchedAt);
 
     btnFullscreen?.addEventListener('click', () => {
       if (!state.fullscreen) {
-        container.requestFullscreen().catch((err) => {
+        // The stage, not just the canvas: the controls float over it and would
+        // vanish from a fullscreen canvas.
+        (document.getElementById('network-stage') ?? container).requestFullscreen().catch((err) => {
           console.warn('[network] requestFullscreen failed:', err);
         });
       } else {
@@ -1922,13 +2097,77 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     thresholdInput?.addEventListener('input', (e) => {
       const val = parseFloat((e.target as HTMLInputElement).value);
       state.similarityThreshold = val;
-      const lbl = document.getElementById('ctrl-threshold-label');
-      if (lbl && lbl.firstChild) {
-        lbl.firstChild.textContent = `similarity: ${val.toFixed(1)} `;
-      }
-      (e.target as HTMLInputElement).setAttribute('aria-valuetext', val.toFixed(1));
+      setThresholdLabel(val);
       applyFilters();
     });
+
+    function setThresholdLabel(val: number) {
+      const text = document.getElementById('ctrl-threshold-text');
+      if (text) text.textContent = `min similarity: ${val.toFixed(1)}`;
+      thresholdInput?.setAttribute('aria-valuetext', val.toFixed(1));
+    }
+
+    // Live readout under the slider: how many of the drawn links survive the
+    // cutoff. Only links that are actually drawn count (similarity or
+    // influence); tag-only links are not drawn, so they are not part of the total.
+    const drawnLinks = links.filter((l) => edgeOpacity(l as StyledLink) > 0);
+    function refreshLinkReadout() {
+      const el = document.getElementById('ctrl-link-count');
+      if (!el) return;
+      const kept = drawnLinks.filter(
+        (l) => ((l as StyledLink).similarity ?? 0) >= state.similarityThreshold
+      ).length;
+      el.textContent =
+        state.similarityThreshold > 0
+          ? `${kept} of ${drawnLinks.length} links`
+          : `${drawnLinks.length} links`;
+    }
+
+    // --- Filters panel: collapse, active-filter badge, clear ---
+    const panelToggle = document.getElementById('ctrl-panel-toggle') as HTMLButtonElement | null;
+    const panelBody = document.getElementById('network-panel-body');
+    const clearBtn = document.getElementById('ctrl-clear') as HTMLButtonElement | null;
+    const activeCount = document.getElementById('ctrl-active-count');
+
+    function setPanelOpen(open: boolean) {
+      panelToggle?.setAttribute('aria-expanded', String(open));
+      if (panelBody) panelBody.hidden = !open;
+    }
+    panelToggle?.addEventListener('click', () => {
+      setPanelOpen(panelToggle.getAttribute('aria-expanded') !== 'true');
+    });
+    // On a phone the panel starts folded so it doesn't cover the graph.
+    setPanelOpen(!window.matchMedia('(max-width: 480px)').matches);
+
+    function refreshPanelState() {
+      const n =
+        (state.searchTerm !== '' ? 1 : 0) +
+        (state.selectedTag !== '' ? 1 : 0) +
+        (state.selectedFamily !== '' ? 1 : 0) +
+        (state.similarityThreshold > 0 ? 1 : 0);
+      if (activeCount) {
+        activeCount.textContent = String(n);
+        activeCount.hidden = n === 0;
+      }
+      if (clearBtn) clearBtn.hidden = n === 0;
+      refreshLinkReadout();
+    }
+
+    clearBtn?.addEventListener('click', () => {
+      state.searchTerm = '';
+      state.selectedTag = '';
+      state.selectedFamily = '';
+      state.similarityThreshold = 0;
+      const search = document.getElementById('ctrl-search') as HTMLInputElement | null;
+      if (search) search.value = '';
+      if (genreSelect) genreSelect.value = '';
+      if (thresholdInput) thresholdInput.value = '0';
+      setThresholdLabel(0);
+      legendButtons.forEach((b) => b.setAttribute('aria-pressed', 'false'));
+      applyFilters();
+    });
+
+    refreshPanelState();
   }
 
   initNetwork();
