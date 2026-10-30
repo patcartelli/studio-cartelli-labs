@@ -23,6 +23,7 @@ export const changelog: ChangelogEntry[] = [
       { label: 'improvement', text: 'Only the 18 most-played artists keep a permanent label; hover names any node, and searching labels what it finds' },
       { label: 'improvement', text: 'Controls now float over the graph — period at the top right, a collapsible Filters panel (search, tag, similarity) at the top left, view toggles at the bottom left, genre key at the bottom right — so the graph starts higher and fills the width. On a phone the panel starts folded and the key moves below the graph' },
       { label: 'improvement', text: 'Similarity slider reads "min similarity" and shows how many links survive the cutoff; a Filters badge counts active filters and "clear" resets them all; genre families with no artists are no longer offered' },
+      { label: 'improvement', text: 'Everything inside the network window — controls, key, graph labels, tooltips — is now set in Geist' },
       { label: 'bugfix',      text: 'Moving the similarity slider no longer dims every outside influence' },
       { label: 'bugfix',      text: 'Influence lookup now requires a MusicBrainz ID on both ends, so "Air" or "Phoenix" no longer match non-musicians and organizations are no longer shown as influencers' },
     ],

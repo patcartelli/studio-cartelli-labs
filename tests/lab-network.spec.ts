@@ -679,3 +679,29 @@ test('legend never offers a genre family with no artists', async ({ page }) => {
   expect(offered.length).toBeGreaterThan(0);
   offered.forEach((count) => expect(Number(count)).toBeGreaterThan(0));
 });
+
+test('everything inside the network window is set in Geist', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  // The stage sets the font; the controls, the key and the SVG labels must all
+  // inherit it (form controls and buttons do not by default).
+  const families = await page.evaluate(() => {
+    const get = (sel: string) => {
+      const el = document.querySelector(sel);
+      return el ? getComputedStyle(el).fontFamily : '(missing)';
+    };
+    return {
+      stage: get('#network-stage'),
+      search: get('#ctrl-search'),
+      select: get('#ctrl-genre-filter'),
+      tools: get('#ctrl-genre'),
+      legend: get('.network__legend-item'),
+      label: get('#network-container svg text'),
+    };
+  });
+  for (const [where, family] of Object.entries(families)) {
+    expect(family, `${where} is not set in Geist`).toContain('Geist');
+  }
+});

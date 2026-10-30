@@ -250,7 +250,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
   <Fragment slot="head">
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400&family=Geist:wght@400;500&display=swap" />
   </Fragment>
   <section class="network container">
     <h1 class="network__heading">Network.</h1>
@@ -583,6 +583,11 @@ const staleAgeText = formatRelativeAge(fetchedAt);
   .network__stage {
     position: relative;
     margin-bottom: var(--space-lg);
+    /* Everything inside the network window -- controls, key, graph labels and
+       tooltips -- is set in Geist (open-licensed, loaded from Google Fonts in
+       <head>), not the site's licensed Polymath. The site stack is the
+       fallback while it loads or if it is blocked. */
+    font-family: 'Geist', var(--font-body), system-ui, sans-serif;
   }
   .network__stage--error {
     min-height: 220px;
@@ -702,7 +707,7 @@ const staleAgeText = formatRelativeAge(fetchedAt);
     border-radius: 2px;
     background: transparent;
     cursor: pointer;
-    font-family: var(--font-body);
+    font-family: inherit;
   }
   .network__panel .network__control {
     width: 100%;
