@@ -482,7 +482,7 @@ test('influence edges have arrowhead markers (VIS-01)', async ({ page }) => {
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
 
   // At least one influence edge line should have marker-end set
-  const markedLines = page.locator('svg line[marker-end]');
+  const markedLines = page.locator('svg line[marker-end]:not(.network__ghost-edge)');
   const count = await markedLines.count();
   // STC-344: a real test.skip(), not an annotate-and-return that reports as a
   // PASS. Influence edges come from Wikidata (P737), which has no fixture and
@@ -507,7 +507,7 @@ test('influence edge endpoints are retracted to node perimeter (VIS-03)', async 
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
 
   // Get the first influence edge line
-  const markedLines = page.locator('svg line[marker-end]');
+  const markedLines = page.locator('svg line[marker-end]:not(.network__ghost-edge)');
   const count = await markedLines.count();
   // STC-344: a real test.skip(), not an annotate-and-return that reports as a
   // PASS. Influence edges come from Wikidata (P737), which has no fixture and

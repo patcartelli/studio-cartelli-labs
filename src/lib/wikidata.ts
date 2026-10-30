@@ -28,11 +28,20 @@ interface WikidataSparqlImageResponse {
 }
 
 /**
- * Find influence relationships (Wikidata P737 "influenced by") between artists
- * in the provided list. Returns only pairs where both artists are in the list.
+ * Find every influence claim (Wikidata P737 "influenced by") made by an artist
+ * in the provided list. `from` is always one of the provided names; `to` is
+ * the influencer, which may or may not be in the list. The caller splits the
+ * two: links whose `to` is also in the list are edges between nodes, the rest
+ * are outside influences drawn as ghost nodes (see network-ghosts.ts).
+ *
+ * Both ends must carry a MusicBrainz artist ID (P434). That is the cheap way
+ * to say "this entity is a musician or band": without it, "Phoenix" or "Air"
+ * match the place or the element, and a claim like Boards of Canada -> National
+ * Film Board of Canada would surface an organization as an influencer.
  *
  * Note: Wikidata labels may not exactly match Last.fm names. This uses exact
- * English label matching — artists with different name spellings won't connect.
+ * English label matching on the `from` side — artists with different name
+ * spellings won't connect.
  */
 export async function getInfluenceLinks(artistNames: string[]): Promise<InfluenceLink[]> {
   if (artistNames.length === 0) return [];
@@ -42,10 +51,12 @@ export async function getInfluenceLinks(artistNames: string[]): Promise<Influenc
   const query = `
     SELECT DISTINCT (STR(?fromLabel) AS ?from) (STR(?toLabel) AS ?to) WHERE {
       VALUES ?fromLabel { ${values} }
-      VALUES ?toLabel { ${values} }
       ?fromEntity rdfs:label ?fromLabel ;
+                  wdt:P434 [] ;
                   wdt:P737 ?toEntity .
-      ?toEntity rdfs:label ?toLabel .
+      ?toEntity wdt:P434 [] ;
+                rdfs:label ?toLabel .
+      FILTER(LANG(?toLabel) = "en")
       FILTER(?fromEntity != ?toEntity)
     }
   `;
@@ -60,6 +71,7 @@ export async function getInfluenceLinks(artistNames: string[]): Promise<Influenc
         'User-Agent': 'StudioCartelli/1.0 (https://studiocartelli.com; contact@studiocartelli.com)',
         'Accept': 'application/sparql-results+json',
       },
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!res.ok) return [];

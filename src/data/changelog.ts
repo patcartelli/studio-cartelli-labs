@@ -16,6 +16,14 @@ export interface ChangelogEntry {
 export const changelog: ChangelogEntry[] = [
   {
     project: 'network',
+    date: '2026-10-30',
+    items: [
+      { label: 'feature',     text: 'Outside influences — artists a Wikidata claim says shaped one of yours, but who are not in this period’s top 100, appear as dashed ghost nodes tethered to the artist they influenced' },
+      { label: 'bugfix',      text: 'Influence lookup now requires a MusicBrainz ID on both ends, so "Air" or "Phoenix" no longer match non-musicians and organizations are no longer shown as influencers' },
+    ],
+  },
+  {
+    project: 'network',
     date: '2026-09-10',
     items: [
       { label: 'feature',     text: 'Genre colour coding — nodes tinted by genre family (electronic, rock, metal, punk, indie, hip-hop, soul & funk, jazz & blues), with a clickable legend to isolate one' },
