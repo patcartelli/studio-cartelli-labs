@@ -1,4 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+// The Filters panel starts folded on a phone so it doesn't cover the graph;
+// open it before touching a control inside it.
+async function openFilters(page: Page) {
+  const toggle = page.locator('#ctrl-panel-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+}
 
 test('network page has heading and period filter', async ({ page }) => {
   await page.goto('/lab/network');
@@ -96,6 +103,7 @@ test('network page has search, genre filter, and threshold controls', async ({ p
     page.locator('.network__error'),
     '/lab/network is in its error state — see tests/network-data-guard.spec.ts'
   ).toHaveCount(0);
+  await openFilters(page);
   await expect(page.locator('#ctrl-search')).toBeVisible();
   await expect(page.locator('#ctrl-genre-filter')).toBeVisible();
   await expect(page.locator('#ctrl-threshold')).toBeVisible();
@@ -119,21 +127,22 @@ test('search input ghosts non-matching nodes (SEARCH-01)', async ({ page }) => {
   // Get total data node count (genre pole circles have no fill-opacity attribute)
   const totalNodes = await page.locator('svg circle[fill-opacity]').count();
   // Type a search term that is unlikely to match all nodes
+  await openFilters(page);
   await page.locator('#ctrl-search').fill('a');
   // Wait for D3 transition to complete (150ms duration + buffer)
   await page.waitForTimeout(300);
-  // Some nodes should be ghosted (fill-opacity < 0.75)
+  // Some nodes should be ghosted (fill-opacity < 0.95)
   const ghostedNodes = await page.locator('svg circle[fill-opacity="0.08"]').count();
   // At least one node should be ghosted (unless every artist has 'a' in their name)
   // and at least one node should remain visible
-  const visibleNodes = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const visibleNodes = await page.locator('svg circle[fill-opacity="0.95"]').count();
   expect(visibleNodes).toBeGreaterThan(0);
   expect(visibleNodes + ghostedNodes).toBe(totalNodes);
   // Clear the search -- all nodes restore to full opacity (D-04)
   await page.locator('#ctrl-search').fill('');
   // Wait for D3 transition to complete
   await page.waitForTimeout(300);
-  const restoredNodes = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const restoredNodes = await page.locator('svg circle[fill-opacity="0.95"]').count();
   expect(restoredNodes).toBe(totalNodes);
 });
 
@@ -149,6 +158,7 @@ test('genre dropdown ghosts nodes without selected tag (SEARCH-02)', async ({ pa
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   const totalNodes = await page.locator('svg circle[fill-opacity]').count();
   // Select the second option (first real tag after "all tags")
+  await openFilters(page);
   await page.locator('#ctrl-genre-filter').selectOption({ index: 1 });
   // Wait for D3 transition to complete (150ms duration + buffer)
   await page.waitForTimeout(300);
@@ -159,7 +169,7 @@ test('genre dropdown ghosts nodes without selected tag (SEARCH-02)', async ({ pa
   await page.locator('#ctrl-genre-filter').selectOption({ value: '' });
   // Wait for D3 transition to complete
   await page.waitForTimeout(300);
-  const restoredNodes = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const restoredNodes = await page.locator('svg circle[fill-opacity="0.95"]').count();
   expect(restoredNodes).toBe(totalNodes);
 });
 
@@ -174,6 +184,7 @@ test('threshold slider ghosts low-similarity edges and disconnected nodes (SEARC
   ).toHaveCount(0);
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   // Move threshold to 0.5 (should ghost some edges and nodes)
+  await openFilters(page);
   await page.locator('#ctrl-threshold').fill('0.5');
   await page.locator('#ctrl-threshold').dispatchEvent('input');
   // Check that the label updated
@@ -201,15 +212,16 @@ test('search and genre filter work together as intersection (SEARCH-04)', async 
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
   const totalNodes = await page.locator('svg circle[fill-opacity]').count();
   // Apply genre filter first
+  await openFilters(page);
   await page.locator('#ctrl-genre-filter').selectOption({ index: 1 });
   // Wait for D3 transition to complete (150ms duration + buffer)
   await page.waitForTimeout(300);
-  const afterGenre = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const afterGenre = await page.locator('svg circle[fill-opacity="0.95"]').count();
   // Now add a search term -- visible count should be <= genre-only count
   await page.locator('#ctrl-search').fill('a');
   // Wait for D3 transition to complete
   await page.waitForTimeout(300);
-  const afterBoth = await page.locator('svg circle[fill-opacity="0.75"]').count();
+  const afterBoth = await page.locator('svg circle[fill-opacity="0.95"]').count();
   expect(afterBoth).toBeLessThanOrEqual(afterGenre);
   // Combined ghosted + visible should equal total
   const ghostedAfterBoth = await page.locator('svg circle[fill-opacity="0.08"]').count();
@@ -482,7 +494,7 @@ test('influence edges have arrowhead markers (VIS-01)', async ({ page }) => {
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
 
   // At least one influence edge line should have marker-end set
-  const markedLines = page.locator('svg line[marker-end]');
+  const markedLines = page.locator('svg line[marker-end]:not(.network__ghost-edge)');
   const count = await markedLines.count();
   // STC-344: a real test.skip(), not an annotate-and-return that reports as a
   // PASS. Influence edges come from Wikidata (P737), which has no fixture and
@@ -507,7 +519,7 @@ test('influence edge endpoints are retracted to node perimeter (VIS-03)', async 
   await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
 
   // Get the first influence edge line
-  const markedLines = page.locator('svg line[marker-end]');
+  const markedLines = page.locator('svg line[marker-end]:not(.network__ghost-edge)');
   const count = await markedLines.count();
   // STC-344: a real test.skip(), not an annotate-and-return that reports as a
   // PASS. Influence edges come from Wikidata (P737), which has no fixture and
@@ -536,3 +548,160 @@ test('influence edge endpoints are retracted to node perimeter (VIS-03)', async 
   expect(exactCenterMatch).toBe(false);
 });
 
+
+// --- Edge and label styling ---------------------------------------------
+// Tag-only edges (~80% of links) are not drawn, and only the most-played
+// artists carry a visible label. See the "Edge and label styling" block in
+// src/pages/network.astro.
+
+test('tag-only edges are undrawn and unhoverable; drawn edges remain', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  const edges = await page.evaluate(() => {
+    const lines = Array.from(document.querySelectorAll('svg line[stroke-opacity]:not(.network__ghost-edge)'));
+    const hidden = lines.filter((l) => l.getAttribute('stroke-opacity') === '0');
+    const hit = Array.from(document.querySelectorAll('svg line[stroke="transparent"]'));
+    return {
+      total: lines.length,
+      hidden: hidden.length,
+      hitTotal: hit.length,
+      hitInert: hit.filter((l) => (l as SVGElement).style.pointerEvents === 'none').length,
+    };
+  });
+
+  expect(edges.hidden, 'some edges should be tag-only and undrawn').toBeGreaterThan(0);
+  expect(edges.hidden, 'similarity/influence edges must still be drawn').toBeLessThan(edges.total);
+  // Every undrawn edge has an inert hit line, so a tooltip never fires on nothing.
+  expect(edges.hitInert).toBe(edges.hidden);
+  expect(edges.hitTotal).toBe(edges.total);
+});
+
+test('at most the 18 most-played artists carry a visible label', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  const nodeCount = await page.locator('svg circle[fill-opacity]').count();
+  const visibleLabels = await page.locator('svg text[fill-opacity="0.85"]').count();
+  expect(visibleLabels).toBe(Math.min(18, nodeCount));
+});
+
+test('a search hit outside the top 18 gets a label', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  const nodeCount = await page.locator('svg circle[fill-opacity]').count();
+  // A cold-cache build only has a partial graph (one 15-artist chunk), where
+  // every artist is within the top 18 and there is nothing to reveal.
+  test.skip(nodeCount <= 18, `needs more than 18 nodes to have an unlabelled one; graph has ${nodeCount}`);
+
+  const visibleLabels = page.locator('svg text[fill-opacity="0.85"]');
+  // The least-played artist is, by construction, not among the top 18.
+  const leastPlayed = await page.evaluate(() => {
+    const g = JSON.parse(document.getElementById('graph-data')!.textContent!) as {
+      nodes: { name: string; playcount: number }[];
+    };
+    return [...g.nodes].sort((a, b) => a.playcount - b.playcount)[0].name;
+  });
+  await expect(visibleLabels.filter({ hasText: leastPlayed })).toHaveCount(0);
+
+  await openFilters(page);
+  await page.locator('#ctrl-search').fill(leastPlayed);
+  await expect(visibleLabels.filter({ hasText: leastPlayed }).first()).toBeAttached();
+});
+
+// --- Floating controls ------------------------------------------------------
+
+test('similarity readout counts surviving links, and clear resets every filter', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+  await openFilters(page);
+
+  const readout = page.locator('#ctrl-link-count');
+  await expect(readout).toHaveText(/^\d+ links$/);
+  const total = parseInt((await readout.textContent()) ?? '0', 10);
+  expect(total).toBeGreaterThan(0);
+
+  const badge = page.locator('#ctrl-active-count');
+  const clear = page.locator('#ctrl-clear');
+  await expect(clear).toBeHidden();
+
+  await page.locator('#ctrl-threshold').fill('0.5');
+  await page.locator('#ctrl-threshold').dispatchEvent('input');
+  await expect(readout).toHaveText(new RegExp(`^\\d+ of ${total} links$`));
+  await expect(badge).toHaveText('1');
+  await expect(clear).toBeVisible();
+
+  await page.locator('#ctrl-search').fill('a');
+  await expect(badge).toHaveText('2');
+
+  await clear.click();
+  await expect(clear).toBeHidden();
+  await expect(badge).toBeHidden();
+  await expect(page.locator('#ctrl-search')).toHaveValue('');
+  await expect(page.locator('#ctrl-threshold')).toHaveValue('0');
+  await expect(page.locator('#ctrl-threshold-label')).toContainText('similarity: 0.0');
+  await expect(readout).toHaveText(`${total} links`);
+});
+
+test('the Filters panel folds and unfolds', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await openFilters(page);
+
+  const toggle = page.locator('#ctrl-panel-toggle');
+  const body = page.locator('#network-panel-body');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(body).toBeVisible();
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(body).toBeHidden();
+
+  await toggle.click();
+  await expect(body).toBeVisible();
+});
+
+test('legend never offers a genre family with no artists', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  const offered = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.network__legend-item'))
+      .filter((b) => !b.closest('li')?.hasAttribute('hidden'))
+      .map((b) => b.querySelector('.network__legend-count')?.textContent ?? '')
+  );
+  expect(offered.length).toBeGreaterThan(0);
+  offered.forEach((count) => expect(Number(count)).toBeGreaterThan(0));
+});
+
+test('everything inside the network window is set in Geist', async ({ page }) => {
+  await page.goto('/lab/network');
+  await expect(page.locator('.network__error')).toHaveCount(0);
+  await page.locator('svg circle[fill-opacity]').first().waitFor({ state: 'attached' });
+
+  // The stage sets the font; the controls, the key and the SVG labels must all
+  // inherit it (form controls and buttons do not by default).
+  const families = await page.evaluate(() => {
+    const get = (sel: string) => {
+      const el = document.querySelector(sel);
+      return el ? getComputedStyle(el).fontFamily : '(missing)';
+    };
+    return {
+      stage: get('#network-stage'),
+      search: get('#ctrl-search'),
+      select: get('#ctrl-genre-filter'),
+      tools: get('#ctrl-genre'),
+      legend: get('.network__legend-item'),
+      label: get('#network-container svg text'),
+    };
+  });
+  for (const [where, family] of Object.entries(families)) {
+    expect(family, `${where} is not set in Geist`).toContain('Geist');
+  }
+});
